@@ -1,0 +1,47 @@
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/treasury}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:root}
+    driver-class-name: ${DB_DRIVER:org.postgresql.Driver}
+
+  jpa:
+    hibernate:
+      ddl-auto: ${DB_HIBERNATE_DDL_AUTO:create-drop}
+    properties:
+      hibernate:
+        dialect: ${DB_HIBERNATE_DIALECT:org.hibernate.dialect.PostgreSQLDialect}
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${JWT_ISSUER_URI:http://localhost:8090/auth/realms/oauth2-realm}
+          jwk-set-uri: ${JWT_JWK_SET_URI:http://localhost:8090/auth/realms/oauth2-realm/protocol/openid-connect/certs}
+
+server:
+  port: ${PORT:0}
+
+eureka:
+  instance:
+    instance-id: "${spring.application.name}:${random.uuid}"
+    prefer-ip-address: true
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+
+logging:
+  level:
+    org:
+      Keycloak: ${KEYCLOAK_LOG_LEVEL:DEBUG}
+jwt:
+  auth:
+    converter:
+      principle-attribute: ${JWT_PRINCIPAL_ATTR:preferred_username}
+      resource-id: ${JWT_RESOURCE_ID:microservices_client}
