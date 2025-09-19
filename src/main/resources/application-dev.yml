@@ -25,7 +25,7 @@ server:
 eureka:
   instance:
     instance-id: "${spring.application.name}:${random.uuid}"
-    prefer-ip-address: true
+    hostname: ${INSTANCE_HOSTNAME:localhost}
   client:
     service-url:
       defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
@@ -39,3 +39,9 @@ jwt:
     converter:
       principle-attribute: ${JWT_PRINCIPAL_ATTR:preferred_username}
       resource-id: ${JWT_RESOURCE_ID:microservices_client}
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
