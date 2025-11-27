@@ -1,19 +1,23 @@
 name: "Build Docker image & push to Docker Hub on push to develop branch"
 on:
-  push:
+  pull_request:
+    types: [closed]
     branches:
       - develop
     paths:
+      - '.postman/**'
       - '**.java'
       - 'pom.xml'
-      - 'Dockerfile'
       - 'src/**'
       - 'mvnw'
       - '.mvn/**'
 jobs:
 
 
-  docker:
+  build-for-develop:
+    if: >
+      github.event.pull_request.merged == true &&
+      !endsWith(github.event.pull_request.head.ref, 'integration')
     uses:
       Equipo-dinamita-escuadron-lobo/workflows/.github/workflows/backend-on-push-to-dev.yaml@main
     with:
@@ -21,4 +25,15 @@ jobs:
     secrets:
       DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
       DOCKER_ACCESS_TOKEN: ${{ secrets.DOCKER_ACCESS_TOKEN }}
+      PAT: ${{ secrets.PAT }}
+
+  promote-on-integration:
+    if: >
+      github.event.pull_request.merged == true &&
+      endsWith(github.event.pull_request.head.ref, 'integration')
+    uses:
+      Equipo-dinamita-escuadron-lobo/workflows/.github/workflows/backend-on-push-to-test.yaml@main
+    with:
+      repository-name: ${{ github.event.repository.name }}
+    secrets:
       PAT: ${{ secrets.PAT }}

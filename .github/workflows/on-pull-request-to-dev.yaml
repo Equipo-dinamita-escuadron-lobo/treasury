@@ -1,19 +1,28 @@
-name: "Run unit tests on pull request to develop branch"
+name: "Run unit tests or integration tests on pull request to develop branch"
 on:
   pull_request:
     branches:
       - develop
     paths:
+      - '.postman/**'
       - '**.java'
       - 'pom.xml'
-      - 'Dockerfile'
       - 'src/**'
       - 'mvnw'
       - '.mvn/**'
 
 jobs:
-  docker:
+  unit-tests:
+    if: >
+      !endsWith(github.head_ref, 'integration')
     uses:
       Equipo-dinamita-escuadron-lobo/workflows/.github/workflows/backend-on-pull-request.yaml@main
     with:
       test-suffix: UnitTest
+    secrets: inherit
+
+  integration-tests:
+    if: endsWith(github.head_ref, 'integration')
+    uses:
+      Equipo-dinamita-escuadron-lobo/workflows/.github/workflows/backend-on-pull-request-newman.yaml@main
+    secrets: inherit
