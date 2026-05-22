@@ -31,7 +31,6 @@ public class CopyPhaseRequestDto {
     @NotBlank
     private String entOrigen;
 
-    @NotBlank
     private String entDestino;
 
     @NotNull
@@ -44,4 +43,11 @@ public class CopyPhaseRequestDto {
      * REQ-TREASURY-02, ADR-38 (treasury sin remap FK CATALOGUE).
      */
     private List<CopyEquivalenciaDto> equivalenciasPrev;
+
+    /**
+     * Datos serializados por un BACKUP previo.
+     * Presente únicamente en modo RESTORE — null en DUPLICATE y BACKUP.
+     */
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    private Object datosImportados;
 }

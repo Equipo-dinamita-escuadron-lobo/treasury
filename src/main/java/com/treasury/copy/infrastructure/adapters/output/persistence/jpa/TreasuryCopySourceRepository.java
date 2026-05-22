@@ -15,7 +15,7 @@ import java.util.List;
  */
 public interface TreasuryCopySourceRepository extends JpaRepository<TreasuryEntity, Long> {
 
-    @Query("SELECT t FROM TreasuryEntity t WHERE t.tenantId = :entOrigen AND t.createdAt <= :snapshotCorte")
+    @Query("SELECT t FROM TreasuryEntity t WHERE t.tenantId = :entOrigen AND (t.createdAt IS NULL OR t.createdAt <= :snapshotCorte)")
     List<TreasuryEntity> findByEntOrigenBeforeSnapshot(
             @Param("entOrigen") String entOrigen,
             @Param("snapshotCorte") Instant snapshotCorte);
