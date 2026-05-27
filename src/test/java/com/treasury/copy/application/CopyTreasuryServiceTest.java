@@ -1,9 +1,8 @@
 package com.treasury.copy.application;
 
 import com.treasury.copy.application.input.IExecuteTreasuryCopyPhasePort;
-import com.treasury.copy.application.output.ICopyJobLogRepositoryPort;
-import com.treasury.copy.application.output.ITreasurySourceRepositoryPort;
-import com.treasury.copy.application.output.ITreasuryTargetRepositoryPort;
+import com.treasury.copy.application.output.*;
+
 import com.treasury.copy.application.services.CopyTreasuryService;
 import com.treasury.copy.domain.enums.CopyEstado;
 import com.treasury.copy.domain.models.CopyJobLog;
@@ -35,18 +34,28 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class CopyTreasuryServiceTest {
 
-    @Mock
-    private ICopyJobLogRepositoryPort logRepo;
-    @Mock
-    private ITreasurySourceRepositoryPort sourceRepo;
-    @Mock
-    private ITreasuryTargetRepositoryPort targetRepo;
+    @Mock private ICopyJobLogRepositoryPort logRepo;
+    @Mock private ITreasurySourceRepositoryPort sourceRepo;
+    @Mock private ITreasuryTargetRepositoryPort targetRepo;
+    @Mock private ITransactionSourceRepositoryPort transactionSource;
+    @Mock private ITransactionTargetRepositoryPort transactionTarget;
+    @Mock private IPaymentVoucherSourceRepositoryPort paymentVoucherSource;
+    @Mock private IPaymentVoucherTargetRepositoryPort paymentVoucherTarget;
+    @Mock private ISplitSourceRepositoryPort splitSource;
+    @Mock private ISplitTargetRepositoryPort splitTarget;
+    @Mock private IPaymentVoucherDetailSourceRepositoryPort paymentVoucherDetailSource;
+    @Mock private IPaymentVoucherDetailTargetRepositoryPort paymentVoucherDetailTarget;
 
     private IExecuteTreasuryCopyPhasePort service;
 
     @BeforeEach
     void setUp() {
-        service = new CopyTreasuryService(logRepo, sourceRepo, targetRepo);
+        service = new CopyTreasuryService(
+                logRepo, sourceRepo, targetRepo,
+                transactionSource, transactionTarget,
+                paymentVoucherSource, paymentVoucherTarget,
+                splitSource, splitTarget,
+                paymentVoucherDetailSource, paymentVoucherDetailTarget);
     }
 
     @Test
