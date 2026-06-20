@@ -1,15 +1,18 @@
 package com.treasury.infrastructure.adapters.output.jpa.entity;
 
-import org.hibernate.annotations.TenantId;
-
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.TenantId;
+
+import java.time.Instant;
 
 @Entity
 @AllArgsConstructor
@@ -32,4 +35,14 @@ public class TreasuryEntity {
 
     @TenantId
     String tenantId;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private Instant createdAt;
+
+    @PrePersist
+    void prePersist() {
+        if (this.createdAt == null) {
+            this.createdAt = Instant.now();
+        }
+    }
 }
