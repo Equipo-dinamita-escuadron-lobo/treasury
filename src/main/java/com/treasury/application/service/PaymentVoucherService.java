@@ -117,7 +117,9 @@ public class PaymentVoucherService implements IPaymentVoucherCommandUseCase, IPa
             return;
         }
         if (voucher.getStatus() != PaymentVoucherStatus.POSTING) {
-            audit.markProcessed(result.eventId(), result.tenantId());
+            if (shouldIgnoreAccountingResult(voucher, result)) {
+                audit.markProcessed(result.eventId(), result.tenantId());
+            }
             return;
         }
         for (PaymentVoucherDetail detail : voucher.getDetails()) {
@@ -138,6 +140,20 @@ public class PaymentVoucherService implements IPaymentVoucherCommandUseCase, IPa
     private void enqueue(PaymentVoucher voucher, String type) { String eventId=UUID.randomUUID().toString();events.enqueue(new TreasuryEvent(eventId, "PAYMENT_VOUCHER", voucher.getId(), type, voucher, context.tenantId(),voucher.getEnterpriseId(),eventId)); }
     private void positive(BigDecimal amount) { if (amount == null || amount.signum() <= 0) throw new TreasuryException(TreasuryException.Type.BAD_REQUEST, "El valor debe ser mayor que cero"); }
     private void validatePaymentMethod(Long methodId, Long bankId, String enterpriseId) {var method=paymentMethods.findActive(methodId,enterpriseId).orElseThrow(()->new TreasuryException(TreasuryException.Type.BAD_REQUEST,"Metodo de pago inactivo o inexistente"));if(method.requiresBankAccount()&&bankId==null)throw new TreasuryException(TreasuryException.Type.BAD_REQUEST,"El metodo de pago exige cuenta bancaria");if(!method.requiresBankAccount()&&bankId!=null)throw new TreasuryException(TreasuryException.Type.BAD_REQUEST,"El metodo de pago no admite cuenta bancaria");if(bankId!=null&&!paymentMethods.isActiveBankAccount(bankId,enterpriseId))throw new TreasuryException(TreasuryException.Type.BAD_REQUEST,"Cuenta bancaria inactiva o inexistente");}
+    private boolean shouldIgnoreAccountingResult(PaymentVoucher voucher, AccountingResult result) {
+        if (result.accepted() && voucher.getStatus() == PaymentVoucherStatus.POSTED) {
+            return true;
+        }
+        if (!result.accepted() && voucher.getStatus() == PaymentVoucherStatus.FAILED) {
+            return true;
+        }
+        if (result.isVoid() && (voucher.getStatus() == PaymentVoucherStatus.VOIDED
+                || voucher.getStatus() == PaymentVoucherStatus.VOID_FAILED)) {
+            return true;
+        }
+        return false;
+    }
+
     private TreasuryException notFound(String message) { return new TreasuryException(TreasuryException.Type.NOT_FOUND, message); }
     private void conflict(String message) { throw new TreasuryException(TreasuryException.Type.CONFLICT, message); }
 }

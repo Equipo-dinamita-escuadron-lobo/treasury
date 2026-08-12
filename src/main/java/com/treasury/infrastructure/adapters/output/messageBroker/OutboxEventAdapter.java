@@ -11,6 +11,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Component
 @RequiredArgsConstructor
@@ -29,6 +31,21 @@ public class OutboxEventAdapter implements ITreasuryEventPublisher {
         entity.setPayload(buildPayload(event));
         entity.setTenantId(event.tenantId());
         repository.save(entity);
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    publishSaved(event.eventId());
+                }
+            });
+        } else {
+            publishSaved(event.eventId());
+        }
+    }
+
+    private void publishSaved(String eventId) {
+        OutboxEventEntity entity = repository.findByEventId(eventId)
+                .orElseThrow(() -> new IllegalStateException("Outbox no encontrado: " + eventId));
         try {
             messenger.publishNow(entity);
             entity.setPublishedAt(Instant.now());

@@ -19,6 +19,8 @@ public interface IPaymentScheduleRepository extends JpaRepository<PaymentSchedul
     List<DueClaim> findDueClaims(@Param("date") LocalDate date);
     @Query(value="select id, tenant_id as tenantId from payment_schedules where status='PROCESSING' and updated_at<:before order by updated_at,id",nativeQuery=true)
     List<DueClaim> findAbandonedClaims(@Param("before") Instant before);
+    @Query(value="select id, tenant_id as tenantId from payment_schedules where status='WAITING_ACCOUNTING' and updated_at<:before order by updated_at,id",nativeQuery=true)
+    List<DueClaim> findWaitingAccountingClaims(@Param("before") Instant before);
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select s from PaymentScheduleEntity s where s.id=:id") Optional<PaymentScheduleEntity> findLocked(@Param("id") Long id);
 }

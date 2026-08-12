@@ -21,6 +21,7 @@ public class PaymentScheduleService implements IPaymentScheduleCommandUseCase,
     private final ISupplierInvoiceProviderPort invoices;
     private final IPaymentVoucherCommandUseCase voucherCommands;
     private final IPaymentVoucherQueryUseCase voucherQueries;
+    private final IPaymentVoucherQueryPersistencePort voucherQueryPersistence;
     private final IExecutionContextPort context;
     private final ITransactionRunnerPort transactions;
     private final ITimeProviderPort time;
@@ -56,12 +57,41 @@ public class PaymentScheduleService implements IPaymentScheduleCommandUseCase,
         return schedules.save(schedule);
     }
     @Override public void executeDue(LocalDate date){for(DuePaymentSchedule due:schedules.findDue(date)){context.runAsTenant(due.tenantId(),()->transactions.run(()->execute(due.id())));}}
-    @Override public void recoverAbandoned(Instant before){for(DuePaymentSchedule due:schedules.findAbandoned(before)){context.runAsTenant(due.tenantId(),()->transactions.run(()->{PaymentSchedule schedule=locked(due.id());if(schedule.getStatus()==PaymentScheduleStatus.PROCESSING){schedule.failed("Ejecucion abandonada recuperada por el scheduler");schedules.save(schedule);}}));}}
+    @Override public void recoverAbandoned(Instant before){
+        for(DuePaymentSchedule due:schedules.findAbandoned(before)){
+            context.runAsTenant(due.tenantId(),()->transactions.run(()->{
+                PaymentSchedule schedule=locked(due.id());
+                if(schedule.getStatus()==PaymentScheduleStatus.PROCESSING){
+                    schedule.failed("Ejecucion abandonada recuperada por el scheduler");
+                    schedules.save(schedule);
+                }
+            }));
+        }
+        for(DuePaymentSchedule due:schedules.findWaitingAccounting(before)){
+            context.runAsTenant(due.tenantId(),()->transactions.run(()->reconcileWaitingAccounting(due.id())));
+        }
+    }
     @Override public void applyAccountingResult(AccountingResult result){
         if(result.isVoid()||!"PAYMENT_VOUCHER".equals(result.documentType()))return;
         schedules.findByVoucherId(result.documentId()).ifPresent(schedule->{
-            schedule.accountingResult(result.accepted(),result.reason());
-            schedules.save(schedule);
+            if(schedule.getStatus()==PaymentScheduleStatus.WAITING_ACCOUNTING){
+                schedule.accountingResult(result.accepted(),result.reason());
+                schedules.save(schedule);
+            }
+        });
+    }
+    private void reconcileWaitingAccounting(Long scheduleId){
+        PaymentSchedule schedule=locked(scheduleId);
+        if(schedule.getStatus()!=PaymentScheduleStatus.WAITING_ACCOUNTING||schedule.getVoucherId()==null)return;
+        voucherQueryPersistence.findById(schedule.getVoucherId()).ifPresent(voucher->{
+            if(voucher.getStatus()==PaymentVoucherStatus.FAILED){
+                schedule.failed(voucher.getFailureReason()==null||voucher.getFailureReason().isBlank()
+                        ? "Contabilización rechazada" : voucher.getFailureReason());
+                schedules.save(schedule);
+            }else if(voucher.getStatus()==PaymentVoucherStatus.POSTED){
+                schedule.accountingResult(true,null);
+                schedules.save(schedule);
+            }
         });
     }
     private PaymentSchedule locked(Long id){return schedules.findLocked(id).orElseThrow(()->notFound("Programación no encontrada"));}

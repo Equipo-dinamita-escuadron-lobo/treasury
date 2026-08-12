@@ -16,5 +16,6 @@ public interface IPaymentSchedulePersistencePort {
     List<PaymentSchedule> search(ScheduleFilter filter);
     List<DuePaymentSchedule> findDue(LocalDate date);
     List<DuePaymentSchedule> findAbandoned(Instant before);
+    List<DuePaymentSchedule> findWaitingAccounting(Instant before);
     void delete(PaymentSchedule schedule);
 }

@@ -7,6 +7,7 @@ import com.treasury.application.output.IPaymentSchedulePersistencePort;
 import com.treasury.application.output.IPaymentMethodProviderPort;
 import com.treasury.application.output.ISupplierInvoiceProviderPort;
 import com.treasury.application.output.ITimeProviderPort;
+import com.treasury.application.output.IPaymentVoucherQueryPersistencePort;
 import com.treasury.application.output.ITransactionRunnerPort;
 import com.treasury.domain.model.DuePaymentSchedule;
 import com.treasury.domain.model.PaymentSchedule;
@@ -29,6 +30,7 @@ class PaymentScheduleServiceTest {
     @Mock ISupplierInvoiceProviderPort invoices;
     @Mock IPaymentVoucherCommandUseCase voucherCommands;
     @Mock IPaymentVoucherQueryUseCase voucherQueries;
+    @Mock IPaymentVoucherQueryPersistencePort voucherQueryPersistence;
     @Mock IExecutionContextPort context;
     @Mock ITransactionRunnerPort transactions;
     @Mock ITimeProviderPort time;
@@ -37,7 +39,7 @@ class PaymentScheduleServiceTest {
 
     @BeforeEach void setUp() {
         service = new PaymentScheduleService(schedules, invoices, voucherCommands,
-                voucherQueries, context, transactions, time, paymentMethods);
+                voucherQueries, voucherQueryPersistence, context, transactions, time, paymentMethods);
     }
 
     @Test void schedulerInstallsTenantBeforeOpeningTransaction() {

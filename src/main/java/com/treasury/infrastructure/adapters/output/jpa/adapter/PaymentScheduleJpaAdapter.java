@@ -24,5 +24,6 @@ public class PaymentScheduleJpaAdapter implements IPaymentSchedulePersistencePor
     @Override public List<PaymentSchedule> search(ScheduleFilter f){return repository.findByEnterpriseId(f.enterpriseId()).stream().filter(s->f.status()==null||s.getStatus()==f.status()).filter(s->f.from()==null||!s.getExecutionDate().isBefore(f.from())).filter(s->f.to()==null||!s.getExecutionDate().isAfter(f.to())).map(mapper::toDomain).toList();}
     @Override public List<DuePaymentSchedule> findDue(LocalDate date){return repository.findDueClaims(date).stream().map(c->new DuePaymentSchedule(c.getId(),c.getTenantId())).toList();}
     @Override public List<DuePaymentSchedule> findAbandoned(Instant before){return repository.findAbandonedClaims(before).stream().map(c->new DuePaymentSchedule(c.getId(),c.getTenantId())).toList();}
+    @Override public List<DuePaymentSchedule> findWaitingAccounting(Instant before){return repository.findWaitingAccountingClaims(before).stream().map(c->new DuePaymentSchedule(c.getId(),c.getTenantId())).toList();}
     @Override public void delete(PaymentSchedule value){repository.deleteById(value.getId());}
 }

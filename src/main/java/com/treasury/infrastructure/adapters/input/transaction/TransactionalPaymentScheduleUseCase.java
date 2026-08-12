@@ -11,6 +11,7 @@ import com.treasury.application.output.ISupplierInvoiceProviderPort;
 import com.treasury.application.output.ITimeProviderPort;
 import com.treasury.application.output.ITransactionRunnerPort;
 import com.treasury.application.output.IPaymentMethodProviderPort;
+import com.treasury.application.output.IPaymentVoucherQueryPersistencePort;
 import com.treasury.application.service.PaymentScheduleService;
 import com.treasury.domain.model.PaymentSchedule;
 import com.treasury.domain.model.command.TreasuryCommands.Schedule;
@@ -29,11 +30,13 @@ public class TransactionalPaymentScheduleUseCase implements IPaymentScheduleComm
 
     public TransactionalPaymentScheduleUseCase(IPaymentSchedulePersistencePort schedules,
             ISupplierInvoiceProviderPort invoices, IPaymentVoucherCommandUseCase voucherCommands,
-            IPaymentVoucherQueryUseCase voucherQueries, IExecutionContextPort context,
+            IPaymentVoucherQueryUseCase voucherQueries,
+            IPaymentVoucherQueryPersistencePort voucherQueryPersistence,
+            IExecutionContextPort context,
             ITransactionRunnerPort transactions, ITimeProviderPort time,
             IPaymentMethodProviderPort paymentMethods) {
         this.delegate = new PaymentScheduleService(schedules, invoices, voucherCommands,
-                voucherQueries, context, transactions, time, paymentMethods);
+                voucherQueries, voucherQueryPersistence, context, transactions, time, paymentMethods);
     }
 
     @Override @Transactional public PaymentSchedule create(Schedule command) { return delegate.create(command); }

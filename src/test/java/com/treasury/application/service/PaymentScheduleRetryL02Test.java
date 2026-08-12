@@ -67,7 +67,7 @@ class PaymentScheduleRetryL02Test {
         voucherService = new PaymentVoucherService(
                 voucherCommands, voucherQueries, invoices, events, audit, context, paymentMethods);
         scheduleService = new PaymentScheduleService(
-                schedules, invoices, voucherService, voucherService,
+                schedules, invoices, voucherService, voucherService, voucherQueries,
                 context, transactions, time, paymentMethods);
         lenient().when(context.tenantId()).thenReturn("tenant");
         lenient().when(paymentMethods.findActive(anyLong(), anyString()))
