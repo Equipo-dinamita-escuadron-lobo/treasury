@@ -1,0 +1,13 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:treasury_flyway;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+    baseline-on-migrate: false
+treasury:
+  scheduler:
+    payment-delay-ms: 3600000
+    outbox-delay-ms: 3600000

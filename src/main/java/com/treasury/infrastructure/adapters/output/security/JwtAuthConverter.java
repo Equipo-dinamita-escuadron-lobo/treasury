@@ -14,6 +14,7 @@ import org.springframework.security.oauth2.jwt.JwtClaimNames;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
@@ -27,8 +28,6 @@ public class JwtAuthConverter implements Converter<Jwt, AbstractAuthenticationTo
 
     @Value("${jwt.auth.converter.resource-id}")
     private String resourceId;
-
-    Jwt jwtToken;
 
     /**
      * Convierte un JWT en un {@link AbstractAuthenticationToken} que se puede
@@ -44,8 +43,6 @@ public class JwtAuthConverter implements Converter<Jwt, AbstractAuthenticationTo
         Collection<GrantedAuthority> authorities = Stream
                 .concat(jwtGrantedAuthoritiesConverter.convert(jwt).stream(), extractResourceRoles(jwt).stream())
                 .toList();
-
-        this.jwtToken = jwt;
 
         return new JwtAuthenticationToken(jwt, authorities, getPrincipleName(jwt));
 
@@ -121,7 +118,9 @@ public class JwtAuthConverter implements Converter<Jwt, AbstractAuthenticationTo
      */
     @Override
     public String getId() {
-        return (String) jwtToken.getClaims().get("sub");
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication instanceof JwtAuthenticationToken token) return token.getToken().getSubject();
+        throw new IllegalStateException("No existe un JWT autenticado en el contexto actual");
     }
 
 }

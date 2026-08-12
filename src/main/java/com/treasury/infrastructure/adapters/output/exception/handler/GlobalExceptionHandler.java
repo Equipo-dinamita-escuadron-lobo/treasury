@@ -7,6 +7,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseBody;
@@ -14,8 +15,10 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+import org.springframework.security.access.AccessDeniedException;
 
 import com.treasury.infrastructure.adapters.output.exception.dto.ErrorResponseDto;
+import com.treasury.domain.exception.TreasuryException;
 
 import jakarta.persistence.EntityNotFoundException;
 
@@ -26,6 +29,28 @@ import jakarta.persistence.EntityNotFoundException;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+  @ExceptionHandler(TreasuryException.class)
+  public ResponseEntity<ErrorResponseDto<Object>> handleTreasuryException(TreasuryException ex) {
+    HttpStatus status = switch (ex.getType()) {
+      case BAD_REQUEST -> HttpStatus.BAD_REQUEST;
+      case CONFLICT -> HttpStatus.CONFLICT;
+      case NOT_FOUND -> HttpStatus.NOT_FOUND;
+      case DEPENDENCY_UNAVAILABLE -> HttpStatus.SERVICE_UNAVAILABLE;
+    };
+    return ErrorResponseDto.builder().errorCode(status.value()).message(ex.getMessage()).build().of();
+  }
+
+  @ExceptionHandler(AccessDeniedException.class)
+  public ResponseEntity<ErrorResponseDto<Object>> handleAccessDenied(AccessDeniedException ex) {
+    return ErrorResponseDto.builder().errorCode(HttpStatus.FORBIDDEN.value()).message("Permiso insuficiente").build().of();
+  }
+
+  @ExceptionHandler(HttpMessageNotReadableException.class)
+  public ResponseEntity<ErrorResponseDto<Object>> handleUnreadableBody(HttpMessageNotReadableException ex) {
+    return ErrorResponseDto.builder().errorCode(HttpStatus.BAD_REQUEST.value())
+        .message("Cuerpo JSON invÃ¡lido").build().of();
+  }
+
   /**
    * Handles exceptions.
    * Logs the error message and returns a response for this specific exception.
@@ -35,14 +60,15 @@ public class GlobalExceptionHandler {
    */
   @ExceptionHandler(MethodArgumentNotValidException.class)
   @ResponseStatus(HttpStatus.BAD_REQUEST)
-  public ResponseEntity<Map<String, String>> handleValidationExceptions(MethodArgumentNotValidException ex) {
+  public ResponseEntity<ErrorResponseDto<Object>> handleValidationExceptions(MethodArgumentNotValidException ex) {
       Map<String, String> errors = new HashMap<>();
       ex.getBindingResult().getAllErrors().forEach((error) -> {
           String fieldName = ((FieldError) error).getField();
           String errorMessage = error.getDefaultMessage();
           errors.put(fieldName, errorMessage);
       });
-      return ResponseEntity.badRequest().body(errors);
+      return ErrorResponseDto.builder().errorCode(HttpStatus.BAD_REQUEST.value())
+          .message("Error de validaciÃ³n").data(errors).build().of();
   }
 
   /**
@@ -60,23 +86,6 @@ public class GlobalExceptionHandler {
          .build()
          .of();
    }
-
-  /**
-   * Handles exceptions.
-   * Logs the error message and returns a response for this specific exception.
-   *
-   * @param e The BusinessRuleException instance.
-   * @return Response entity containing error details.
-   */
-  @ExceptionHandler(BusinessRuleException.class)
-  public ResponseEntity<ErrorResponseDto<Object>> handleBusinessRuleException(BusinessRuleException e) {
-    return ErrorResponseDto.builder()
-        .errorCode(e.getStatus())
-        .message(e.getMessage())
-        .build()
-        .of();
-  }
-
 
   /**
    * Handles MissingServletRequestParameterException.

@@ -35,7 +35,7 @@ public class TenantInterceptor implements WebRequestInterceptor {
      *  */
     @Override
     public void postHandle(WebRequest request, ModelMap model) throws Exception {
-        TenantContext.clear();
+        // The persistence transaction may still complete after postHandle.
     }
 
     /**
@@ -50,6 +50,6 @@ public class TenantInterceptor implements WebRequestInterceptor {
      */
     @Override
     public void afterCompletion(WebRequest request, Exception ex) throws Exception {
-
+        TenantContext.clear();
     }
 }
