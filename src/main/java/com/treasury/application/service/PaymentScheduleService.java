@@ -51,7 +51,7 @@ public class PaymentScheduleService implements IPaymentScheduleCommandUseCase,
         try{
             PaymentVoucher voucher;
             if(schedule.getVoucherId()==null){Voucher command=new Voucher(schedule.getEnterpriseId(),time.today(),schedule.getPaymentMethodId(),schedule.getBankAccountId(),schedule.getObservations(),schedule.getDetails().stream().map(d->new Detail(d.getSupplierId(),d.getInvoiceId(),d.getAmount())).toList());voucher=voucherCommands.create(command);schedule.setVoucherId(voucher.getId());schedule=schedules.save(schedule);}else voucher=voucherQueries.find(schedule.getVoucherId(),schedule.getEnterpriseId());
-            voucherCommands.post(voucher.getId(),schedule.getEnterpriseId(),"schedule-"+schedule.getId());schedule.waitingAccounting();
+            voucherCommands.post(voucher.getId(),schedule.getEnterpriseId(),"schedule-"+schedule.getId()+"-"+schedule.getRetryCount());schedule.waitingAccounting();
         }catch(RuntimeException ex){schedule.failed(ex.getMessage());}
         return schedules.save(schedule);
     }
