@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController @RequestMapping("/api/treasury/payable-write-offs") @RequiredArgsConstructor
-@PreAuthorize("hasAnyRole('Estudiante','Profesor','Administrador')")
+@PreAuthorize("hasAnyRole('user_client','admin_client','super_client')")
 public class PayableWriteOffController {
     private final IPayableWriteOffCommandUseCase commands;
     private final IPayableWriteOffQueryUseCase queries;

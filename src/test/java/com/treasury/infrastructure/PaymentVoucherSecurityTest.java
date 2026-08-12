@@ -29,12 +29,19 @@ class PaymentVoucherSecurityTest {
         mvc.perform(get("/api/treasury/payment-vouchers").param("enterpriseId", "ent")).andExpect(status().isUnauthorized());
     }
 
-    @Test void studentIsAccepted() throws Exception { assertOperationalRole("Estudiante"); }
-    @Test void teacherIsAccepted() throws Exception { assertOperationalRole("Profesor"); }
-    @Test void administratorIsAccepted() throws Exception { assertOperationalRole("Administrador"); }
+    @Test void userClientIsAccepted() throws Exception { assertOperationalRole("user_client"); }
+    @Test void adminClientIsAccepted() throws Exception { assertOperationalRole("admin_client"); }
+    @Test void superClientIsAccepted() throws Exception { assertOperationalRole("super_client"); }
+
+    @Test void unauthorizedRoleIsRejected() throws Exception {
+        when(queries.search(any())).thenReturn(new PageResult<>(java.util.List.of(), 0, 0, 0, 20));
+        mvc.perform(get("/api/treasury/payment-vouchers").param("enterpriseId", "ent")
+                .with(jwt().jwt(token -> token.claim("tenantId", "tenant").subject("tester"))
+                        .authorities(new SimpleGrantedAuthority("ROLE_Invitado")))).andExpect(status().isForbidden());
+    }
 
     private void assertOperationalRole(String role) throws Exception {
-        when(queries.search(any())).thenReturn(new PageResult<>(java.util.List.of(),0,0,0,20));
+        when(queries.search(any())).thenReturn(new PageResult<>(java.util.List.of(), 0, 0, 0, 20));
         mvc.perform(get("/api/treasury/payment-vouchers").param("enterpriseId", "ent")
                 .with(jwt().jwt(token -> token.claim("tenantId", "tenant").subject("tester"))
                         .authorities(new SimpleGrantedAuthority("ROLE_" + role)))).andExpect(status().isOk());
