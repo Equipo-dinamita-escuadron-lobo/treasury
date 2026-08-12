@@ -32,6 +32,7 @@ class PaymentVoucherSecurityTest {
     @Test void userClientIsAccepted() throws Exception { assertOperationalRole("user_client"); }
     @Test void adminClientIsAccepted() throws Exception { assertOperationalRole("admin_client"); }
     @Test void superClientIsAccepted() throws Exception { assertOperationalRole("super_client"); }
+    @Test void studentIsAccepted() throws Exception { assertOperationalRole("Estudiante"); }
 
     @Test void unauthorizedRoleIsRejected() throws Exception {
         when(queries.search(any())).thenReturn(new PageResult<>(java.util.List.of(), 0, 0, 0, 20));

@@ -17,7 +17,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 
 @RestController @RequestMapping("/api/treasury/payment-vouchers") @RequiredArgsConstructor
-@PreAuthorize("hasAnyRole('user_client','admin_client','super_client')")
+@PreAuthorize("hasAnyRole('user_client','admin_client','super_client','Estudiante','Profesor','Administrador')")
 public class PaymentVoucherController {
     private final IPaymentVoucherCommandUseCase commands;
     private final IPaymentVoucherQueryUseCase queries;

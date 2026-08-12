@@ -16,7 +16,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 @RestController @RequestMapping("/api/treasury/payment-schedules") @RequiredArgsConstructor
-@PreAuthorize("hasAnyRole('user_client','admin_client','super_client')")
+@PreAuthorize("hasAnyRole('user_client','admin_client','super_client','Estudiante','Profesor','Administrador')")
 public class PaymentScheduleController {
     private final IPaymentScheduleCommandUseCase commands;
     private final IPaymentScheduleQueryUseCase queries;
