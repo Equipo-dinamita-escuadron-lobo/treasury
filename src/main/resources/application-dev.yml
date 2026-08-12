@@ -64,16 +64,6 @@ management:
 treasury:
   integrations:
     account-catalogue-url: ${ACCOUNT_CATALOGUE_URL:http://localhost:8080}
-  security:
-    service-token:
-      uri: ${TREASURY_OAUTH_TOKEN_URI:${JWT_ISSUER_URI:http://localhost:8090/auth/realms/oauth2-realm}/protocol/openid-connect/token}
-      client-id: ${TREASURY_OAUTH_CLIENT_ID:treasury-service}
-      client-secret: ${TREASURY_OAUTH_CLIENT_SECRET:}
-    rabbit:
-      expected-audience: ${TREASURY_RABBIT_AUDIENCE:treasury}
-      facture-azp: ${TREASURY_RABBIT_FACTURE_AZP:facture-service}
-      accounting-azp: ${TREASURY_RABBIT_ACCOUNTING_AZP:account-catalogue-service}
   scheduler:
     payment-delay-ms: ${TREASURY_PAYMENT_SCHEDULER_DELAY_MS:60000}
-    outbox-delay-ms: ${TREASURY_OUTBOX_DELAY_MS:5000}
     timezone: ${TREASURY_TIMEZONE:America/Bogota}

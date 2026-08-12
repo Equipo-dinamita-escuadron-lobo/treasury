@@ -8,9 +8,15 @@ import com.treasury.domain.model.PaymentVoucherStatus;
 import com.treasury.infrastructure.adapters.output.multitenancy.utils.TenantContext;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.amqp.rabbit.connection.CorrelationData;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.context.ActiveProfiles;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -24,8 +30,17 @@ class HexagonalFlowIntegrationTest {
     @Autowired IPaymentVoucherCommandUseCase voucherCommands;
     @Autowired IPaymentVoucherQueryUseCase voucherQueries;
     @MockBean IPaymentMethodProviderPort paymentMethods;
+    @MockBean RabbitTemplate rabbit;
     private final String tenant="flow-tenant";
-    @BeforeEach void tenant(){TenantContext.setTenantId(tenant);when(paymentMethods.findActive(17L,"enterprise-flow")).thenReturn(java.util.Optional.of(new PaymentMethodData(17L,false)));}
+    @BeforeEach void tenant(){
+        TenantContext.setTenantId(tenant);
+        when(paymentMethods.findActive(17L,"enterprise-flow")).thenReturn(java.util.Optional.of(new PaymentMethodData(17L,false)));
+        doAnswer(invocation -> {
+            CorrelationData correlation = invocation.getArgument(4);
+            correlation.getFuture().complete(new CorrelationData.Confirm(true, null));
+            return null;
+        }).when(rabbit).convertAndSend(anyString(), eq(""), any(), any(), any(CorrelationData.class));
+    }
     @AfterEach void clear(){TenantContext.clear();}
 
     @Test void purchaseReplicaVoucherReservationAndAccountingAckCrossPortsAndJpaAdapters(){

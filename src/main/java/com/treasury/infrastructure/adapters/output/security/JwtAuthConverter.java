@@ -29,6 +29,8 @@ public class JwtAuthConverter implements Converter<Jwt, AbstractAuthenticationTo
     @Value("${jwt.auth.converter.resource-id}")
     private String resourceId;
 
+    private Jwt jwtToken;
+
     /**
      * Convierte un JWT en un {@link AbstractAuthenticationToken} que se puede
      * utilizar
@@ -43,6 +45,8 @@ public class JwtAuthConverter implements Converter<Jwt, AbstractAuthenticationTo
         Collection<GrantedAuthority> authorities = Stream
                 .concat(jwtGrantedAuthoritiesConverter.convert(jwt).stream(), extractResourceRoles(jwt).stream())
                 .toList();
+
+        this.jwtToken = jwt;
 
         return new JwtAuthenticationToken(jwt, authorities, getPrincipleName(jwt));
 
@@ -121,6 +125,18 @@ public class JwtAuthConverter implements Converter<Jwt, AbstractAuthenticationTo
         var authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication instanceof JwtAuthenticationToken token) return token.getToken().getSubject();
         throw new IllegalStateException("No existe un JWT autenticado en el contexto actual");
+    }
+
+    @Override
+    public String getToken() {
+        if (jwtToken == null) {
+            var authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication instanceof JwtAuthenticationToken token) {
+                return token.getToken().getTokenValue();
+            }
+            throw new IllegalStateException("No existe un JWT autenticado en el contexto actual");
+        }
+        return jwtToken.getTokenValue();
     }
 
 }

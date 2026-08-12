@@ -28,11 +28,5 @@ jwt:
       principle-attribute: preferred_username
       resource-id: microservices_client
 treasury:
-  security:
-    service-token:
-      uri: http://localhost/test/token
-      client-id: treasury-test
-      client-secret: test-secret
   scheduler:
     payment-delay-ms: 3600000
-    outbox-delay-ms: 3600000
