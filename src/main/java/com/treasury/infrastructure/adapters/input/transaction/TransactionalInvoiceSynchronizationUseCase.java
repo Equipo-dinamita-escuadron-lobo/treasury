@@ -1,6 +1,7 @@
 package com.treasury.infrastructure.adapters.input.transaction;
 
 import com.treasury.application.input.IInvoiceSynchronizationUseCase;
+import com.treasury.application.output.IAccountCodeResolverPort;
 import com.treasury.application.output.ISupplierInvoiceProviderPort;
 import com.treasury.application.output.ITreasuryAuditPersistencePort;
 import com.treasury.application.service.InvoiceReplicaService;
@@ -13,8 +14,9 @@ public class TransactionalInvoiceSynchronizationUseCase implements IInvoiceSynch
     private final InvoiceReplicaService delegate;
 
     public TransactionalInvoiceSynchronizationUseCase(ISupplierInvoiceProviderPort invoices,
-            ITreasuryAuditPersistencePort audit) {
-        this.delegate = new InvoiceReplicaService(invoices, audit);
+            ITreasuryAuditPersistencePort audit,
+            IAccountCodeResolverPort accountCodes) {
+        this.delegate = new InvoiceReplicaService(invoices, audit, accountCodes);
     }
 
     @Override
