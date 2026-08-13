@@ -7,10 +7,25 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: ${DB_HIBERNATE_DDL_AUTO:create-drop}
+      ddl-auto: ${DB_HIBERNATE_DDL_AUTO:validate}
+    open-in-view: false
     properties:
       hibernate:
         dialect: ${DB_HIBERNATE_DIALECT:org.hibernate.dialect.PostgreSQLDialect}
+
+  flyway:
+    enabled: ${DB_FLYWAY_ENABLED:true}
+    baseline-on-migrate: ${DB_FLYWAY_BASELINE_ON_MIGRATE:true}
+    baseline-version: ${DB_FLYWAY_BASELINE_VERSION:0}
+    locations: classpath:db/migration
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    publisher-confirm-type: correlated
+    publisher-returns: true
 
   security:
     oauth2:
@@ -45,3 +60,10 @@ management:
     health:
       probes:
         enabled: true
+
+treasury:
+  integrations:
+    account-catalogue-url: ${ACCOUNT_CATALOGUE_URL:http://localhost:8080}
+  scheduler:
+    payment-delay-ms: ${TREASURY_PAYMENT_SCHEDULER_DELAY_MS:60000}
+    timezone: ${TREASURY_TIMEZONE:America/Bogota}

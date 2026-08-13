@@ -1,75 +1,69 @@
 package com.treasury.domain.model;
 
+import com.treasury.domain.exception.TreasuryException;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 
-@Getter
-@Setter
-@NoArgsConstructor
+@Getter @Setter @NoArgsConstructor
 public class PaymentVoucher {
     private Long id;
-    private LocalDateTime date;
-    private Long payeeId;
-    private BigDecimal amount;
-    private Long methodId;
+    private String voucherNumber;
+    private String enterpriseId;
+    private LocalDate issueDate;
+    private PaymentVoucherStatus status = PaymentVoucherStatus.DRAFT;
+    private Long paymentMethodId;
     private Long bankAccountId;
-    private String description;
-    private String status;
-    private LocalDateTime createdAt;
-    private LocalDateTime updatedAt;
-    private List<PaymentVoucherDetail> details;
+    private BigDecimal total = BigDecimal.ZERO;
+    private String observations;
+    private String idempotencyKey;
+    private Long accountingEntryId;
+    private String failureReason;
+    private String voidReason;
+    private Instant createdAt;
+    private Instant updatedAt;
+    private long version;
+    private String tenantId;
+    private List<PaymentVoucherDetail> details = new ArrayList<>();
 
-    public PaymentVoucher(LocalDateTime date, Long payeeId, BigDecimal amount,
-                         Long methodId, Long bankAccountId, String description) {
-        this.date = date;
-        this.payeeId = payeeId;
-        this.amount = amount;
-        this.methodId = methodId;
-        this.bankAccountId = bankAccountId;
-        this.description = description;
-        this.status = "PENDING";
-        this.createdAt = LocalDateTime.now();
-        this.updatedAt = LocalDateTime.now();
+    public void replaceDetails(List<PaymentVoucherDetail> newDetails) {
+        if (status != PaymentVoucherStatus.DRAFT && status != PaymentVoucherStatus.FAILED)
+            conflict("Solo se pueden editar comprobantes en borrador o fallidos");
+        details = new ArrayList<>(newDetails);
+        total = details.stream().map(PaymentVoucherDetail::getAmountPaid).reduce(BigDecimal.ZERO, BigDecimal::add);
+        status = PaymentVoucherStatus.DRAFT;
+        failureReason = null;
     }
 
-    public void approve() {
-        if (!"PENDING".equals(this.status)) {
-            throw new IllegalStateException("Only pending vouchers can be approved");
-        }
-        this.status = "APPROVED";
-        this.updatedAt = LocalDateTime.now();
+    public void startPosting(String key) {
+        if (status != PaymentVoucherStatus.DRAFT && status != PaymentVoucherStatus.FAILED)
+            conflict("El comprobante no se puede contabilizar desde su estado actual");
+        idempotencyKey = key; status = PaymentVoucherStatus.POSTING; failureReason = null;
     }
 
-    public void reject() {
-        if (!"PENDING".equals(this.status)) {
-            throw new IllegalStateException("Only pending vouchers can be rejected");
-        }
-        this.status = "REJECTED";
-        this.updatedAt = LocalDateTime.now();
+    public void applyAccountingResult(boolean accepted, Long entryId, String reason) {
+        if (status != PaymentVoucherStatus.POSTING) return;
+        status = accepted ? PaymentVoucherStatus.POSTED : PaymentVoucherStatus.FAILED;
+        accountingEntryId = entryId; failureReason = reason;
     }
 
-    public void pay() {
-        if (!"APPROVED".equals(this.status)) {
-            throw new IllegalStateException("Only approved vouchers can be paid");
-        }
-        this.status = "PAID";
-        this.updatedAt = LocalDateTime.now();
+    public void voidWithReason(String reason) {
+        if (status != PaymentVoucherStatus.POSTED && status != PaymentVoucherStatus.VOID_FAILED)
+            conflict("Solo se anulan comprobantes contabilizados o con anulaciÃ³n fallida");
+        if (reason == null || reason.isBlank()) conflict("El motivo de anulaciÃ³n es obligatorio");
+        status = PaymentVoucherStatus.VOIDING; voidReason = reason; failureReason = null;
     }
 
-    public boolean isPending() {
-        return "PENDING".equals(this.status);
+    public void applyVoidAccountingResult(boolean accepted, String reason) {
+        if (status != PaymentVoucherStatus.VOIDING) return;
+        status = accepted ? PaymentVoucherStatus.VOIDED : PaymentVoucherStatus.VOID_FAILED;
+        failureReason = accepted ? null : reason;
     }
 
-    public boolean isApproved() {
-        return "APPROVED".equals(this.status);
-    }
-
-    public boolean isPaid() {
-        return "PAID".equals(this.status);
-    }
+    private void conflict(String message) { throw new TreasuryException(TreasuryException.Type.CONFLICT, message); }
 }
