@@ -73,6 +73,8 @@ public class PaymentVoucherService implements IPaymentVoucherCommandUseCase, IPa
         for (PaymentVoucherDetail detail : voucher.getDetails()) {
             SupplierInvoiceReplica invoice = lockedInvoice(detail.getInvoiceId(), enterpriseId);
             if (!invoice.getSupplierId().equals(detail.getSupplierId())) conflict("La obligación pertenece a otro proveedor");
+            detail.setPayableAccountId(invoice.getPayableAccountId());
+            detail.setPayableAccountCode(invoice.getPayableAccountCode());
             invoice.reserve(detail.getAmountPaid()); invoices.save(invoice);
         }
         PaymentVoucher saved = voucherCommands.save(voucher);
