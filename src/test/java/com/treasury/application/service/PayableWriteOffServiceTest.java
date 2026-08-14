@@ -14,6 +14,7 @@ import com.treasury.domain.model.command.TreasuryCommands.AccountingResult;
 import com.treasury.domain.model.command.TreasuryCommands.Detail;
 import com.treasury.domain.model.command.TreasuryCommands.WriteOff;
 import java.math.BigDecimal;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,7 +46,7 @@ class PayableWriteOffServiceTest {
     @BeforeEach
     void setUp() {
         service = new PayableWriteOffService(writeOffs, invoices, events, audit, context);
-        lenient().when(context.tenantId()).thenReturn("tenant");
+        lenient().when(writeOffs.findByEnterprise("ent")).thenReturn(Collections.emptyList());
         lenient().when(writeOffs.save(any())).thenAnswer(invocation -> {
             PayableWriteOff value = invocation.getArgument(0);
             if (value.getId() == null) {
@@ -67,6 +68,17 @@ class PayableWriteOffServiceTest {
         assertThat(detail.getPayableAccountId()).isEqualTo(2205L);
         assertThat(detail.getPayableAccountCode()).isEqualTo("220501");
         assertThat(result.getStatus()).isEqualTo(WriteOffStatus.DRAFT);
+        verify(invoices, never()).save(any());
+    }
+
+    @Test
+    void createDraftDoesNotModifyInvoiceBalances() {
+        SupplierInvoiceReplica invoice = invoice(11L, 7L, "279", "0", 2205L, "220501");
+        when(invoices.findById(11L)).thenReturn(Optional.of(invoice));
+        service.create(command(new Detail(7L, 11L, bd("279"))));
+        assertThat(invoice.getPendingAmount()).isEqualByComparingTo("279");
+        assertThat(invoice.getReservedAmount()).isZero();
+        verify(invoices, never()).save(any());
     }
 
     @Test
@@ -95,12 +107,23 @@ class PayableWriteOffServiceTest {
     }
 
     @Test
-    void rejectsWriteOffWhenNoAvailableBalance() {
-        SupplierInvoiceReplica reserved = invoice(11L, 7L, "500", "500", 2205L, "220501");
-        when(invoices.findById(11L)).thenReturn(Optional.of(reserved));
-        assertThatThrownBy(() -> service.create(command(new Detail(7L, 11L, bd("10")))))
+    void zeroAvailableBalanceRejectsNewWriteOff() {
+        SupplierInvoiceReplica invoice = invoice(11L, 7L, "0", "0", 2205L, "220501");
+        when(invoices.findById(11L)).thenReturn(Optional.of(invoice));
+        assertThatThrownBy(() -> service.create(command(new Detail(7L, 11L, bd("1")))))
                 .isInstanceOf(TreasuryException.class)
                 .hasMessageContaining("inválido");
+    }
+
+    @Test
+    void existingReservationReducesAvailableForWriteOff() {
+        SupplierInvoiceReplica invoice = invoice(11L, 7L, "279", "200", 2205L, "220501");
+        when(invoices.findById(11L)).thenReturn(Optional.of(invoice));
+        assertThatThrownBy(() -> service.create(command(new Detail(7L, 11L, bd("100")))))
+                .isInstanceOf(TreasuryException.class)
+                .hasMessageContaining("inválido");
+        PayableWriteOff allowed = service.create(command(new Detail(7L, 11L, bd("79"))));
+        assertThat(allowed.getTotal()).isEqualByComparingTo("79");
     }
 
     @Test
@@ -137,6 +160,23 @@ class PayableWriteOffServiceTest {
     }
 
     @Test
+    void totalWriteOffAcceptedLeavesPendingAtZero() {
+        SupplierInvoiceReplica invoice = invoice(11L, 7L, "279", "279", 2205L, "220501");
+        PayableWriteOff writeOff = draftWriteOff(invoice, bd("279"));
+        writeOff.setStatus(WriteOffStatus.POSTING);
+        when(writeOffs.find(9L)).thenReturn(Optional.of(writeOff));
+        when(invoices.findLocked(11L, "ent")).thenReturn(Optional.of(invoice));
+        when(audit.wasProcessed("result-total")).thenReturn(false);
+
+        service.applyAccountingResult(new AccountingResult(
+                "result-total", "PAYABLE_WRITEOFF", 9L, true, 90L, null, "tenant"));
+
+        assertThat(invoice.getPendingAmount()).isZero();
+        assertThat(invoice.getReservedAmount()).isZero();
+        assertThat(writeOff.getStatus()).isEqualTo(WriteOffStatus.POSTED);
+    }
+
+    @Test
     void confirmRejectedWriteOffReleasesReservationWithoutChangingPending() {
         SupplierInvoiceReplica invoice = invoice(11L, 7L, "500", "200", 2205L, "220501");
         PayableWriteOff writeOff = draftWriteOff(invoice, bd("200"));
@@ -165,6 +205,94 @@ class PayableWriteOffServiceTest {
         assertThat(result.getStatus()).isEqualTo(WriteOffStatus.POSTING);
         assertThat(invoice.getReservedAmount()).isEqualByComparingTo("200");
         verify(events).enqueue(any());
+    }
+
+    @Test
+    void discardDraftWriteOffDoesNotModifyInvoiceBalances() {
+        SupplierInvoiceReplica invoice = invoice(11L, 7L, "279", "0", 2205L, "220501");
+        PayableWriteOff writeOff = draftWriteOff(invoice, bd("100"));
+        when(writeOffs.find(9L)).thenReturn(Optional.of(writeOff));
+
+        PayableWriteOff result = service.discardDraft(9L);
+
+        assertThat(result.getStatus()).isEqualTo(WriteOffStatus.VOIDED);
+        assertThat(invoice.getPendingAmount()).isEqualByComparingTo("279");
+        assertThat(invoice.getReservedAmount()).isZero();
+        verify(invoices, never()).findLocked(anyLong(), any());
+        verify(invoices, never()).save(any());
+        verifyNoInteractions(events);
+    }
+
+    @Test
+    void rejectsDiscardOnPostedWriteOff() {
+        SupplierInvoiceReplica invoice = invoice(11L, 7L, "179", "0", 2205L, "220501");
+        PayableWriteOff writeOff = draftWriteOff(invoice, bd("100"));
+        writeOff.setStatus(WriteOffStatus.POSTED);
+        when(writeOffs.find(9L)).thenReturn(Optional.of(writeOff));
+
+        assertThatThrownBy(() -> service.discardDraft(9L))
+                .isInstanceOf(TreasuryException.class)
+                .hasMessageContaining("estado borrador");
+    }
+
+    @Test
+    void voidOnDraftWriteOffDiscardsWithoutAccounting() {
+        SupplierInvoiceReplica invoice = invoice(11L, 7L, "279", "0", 2205L, "220501");
+        PayableWriteOff writeOff = draftWriteOff(invoice, bd("100"));
+        when(writeOffs.find(9L)).thenReturn(Optional.of(writeOff));
+
+        PayableWriteOff result = service.voidWriteOff(9L);
+
+        assertThat(result.getStatus()).isEqualTo(WriteOffStatus.VOIDED);
+        verifyNoInteractions(events);
+    }
+
+    @Test
+    void rejectsSecondActiveWriteOffOnSameInvoice() {
+        SupplierInvoiceReplica invoice = invoice(11L, 7L, "279", "0", 2205L, "220501");
+        PayableWriteOff existing = draftWriteOff(invoice, bd("100"));
+        when(writeOffs.findByEnterprise("ent")).thenReturn(List.of(existing));
+        when(invoices.findById(11L)).thenReturn(Optional.of(invoice));
+
+        assertThatThrownBy(() -> service.create(command(new Detail(7L, 11L, bd("50")))))
+                .isInstanceOf(TreasuryException.class)
+                .hasMessageContaining("pendiente de contabilización");
+    }
+
+    @Test
+    void allowsNewWriteOffAfterDraftVoided() {
+        SupplierInvoiceReplica invoice = invoice(11L, 7L, "279", "0", 2205L, "220501");
+        PayableWriteOff voided = draftWriteOff(invoice, bd("100"));
+        voided.setStatus(WriteOffStatus.VOIDED);
+        when(writeOffs.findByEnterprise("ent")).thenReturn(List.of(voided));
+        when(invoices.findById(11L)).thenReturn(Optional.of(invoice));
+
+        PayableWriteOff result = service.create(command(new Detail(7L, 11L, bd("100"))));
+        assertThat(result.getStatus()).isEqualTo(WriteOffStatus.DRAFT);
+    }
+
+    @Test
+    void allowsNewWriteOffAfterPostedPartialWriteOff() {
+        SupplierInvoiceReplica invoice = invoice(11L, 7L, "179", "0", 2205L, "220501");
+        PayableWriteOff posted = draftWriteOff(invoice, bd("100"));
+        posted.setStatus(WriteOffStatus.POSTED);
+        when(writeOffs.findByEnterprise("ent")).thenReturn(List.of(posted));
+        when(invoices.findById(11L)).thenReturn(Optional.of(invoice));
+
+        PayableWriteOff result = service.create(command(new Detail(7L, 11L, bd("79"))));
+        assertThat(result.getTotal()).isEqualByComparingTo("79");
+    }
+
+    @Test
+    void allowsNewWriteOffAfterFailedWriteOff() {
+        SupplierInvoiceReplica invoice = invoice(11L, 7L, "279", "0", 2205L, "220501");
+        PayableWriteOff failed = draftWriteOff(invoice, bd("100"));
+        failed.setStatus(WriteOffStatus.FAILED);
+        when(writeOffs.findByEnterprise("ent")).thenReturn(List.of(failed));
+        when(invoices.findById(11L)).thenReturn(Optional.of(invoice));
+
+        PayableWriteOff result = service.create(command(new Detail(7L, 11L, bd("100"))));
+        assertThat(result.getStatus()).isEqualTo(WriteOffStatus.DRAFT);
     }
 
     @Test

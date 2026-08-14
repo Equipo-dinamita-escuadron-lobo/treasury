@@ -22,5 +22,6 @@ public class PayableWriteOffController {
     @GetMapping public List<WriteOffResponse> list(@RequestParam String enterpriseId){return mapper.toResponseList(queries.list(enterpriseId));}
     @GetMapping("/{id}")public WriteOffResponse find(@PathVariable Long id){return mapper.toResponse(queries.find(id));}
     @PostMapping("/{id}/confirm")public WriteOffResponse confirm(@PathVariable Long id){return mapper.toResponse(commands.confirm(id));}
+    @PostMapping("/{id}/discard")public WriteOffResponse discardDraft(@PathVariable Long id){return mapper.toResponse(commands.discardDraft(id));}
     @PostMapping("/{id}/void")public WriteOffResponse voidWriteOff(@PathVariable Long id){return mapper.toResponse(commands.voidWriteOff(id));}
 }
