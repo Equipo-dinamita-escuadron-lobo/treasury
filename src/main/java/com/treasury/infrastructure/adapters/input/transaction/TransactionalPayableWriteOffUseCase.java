@@ -28,6 +28,7 @@ public class TransactionalPayableWriteOffUseCase
 
     @Override @Transactional public PayableWriteOff create(WriteOff command) { return delegate.create(command); }
     @Override @Transactional public PayableWriteOff confirm(Long id) { return delegate.confirm(id); }
+    @Override @Transactional public PayableWriteOff discardDraft(Long id) { return delegate.discardDraft(id); }
     @Override @Transactional public PayableWriteOff voidWriteOff(Long id) { return delegate.voidWriteOff(id); }
     @Override @Transactional public void applyAccountingResult(AccountingResult result) { delegate.applyAccountingResult(result); }
     @Override @Transactional(readOnly = true) public PayableWriteOff find(Long id) { return delegate.find(id); }
