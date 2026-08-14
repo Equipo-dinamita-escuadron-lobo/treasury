@@ -141,7 +141,9 @@ public class PaymentVoucherService implements IPaymentVoucherCommandUseCase, IPa
     private SupplierInvoiceReplica lockedInvoice(Long id, String enterpriseId) { return invoices.findLocked(id, enterpriseId).orElseThrow(() -> notFound("Obligación no encontrada")); }
     private void enqueue(PaymentVoucher voucher, String type) { String eventId=UUID.randomUUID().toString();events.enqueue(new TreasuryEvent(eventId, "PAYMENT_VOUCHER", voucher.getId(), type, voucher, context.tenantId(),voucher.getEnterpriseId(),eventId)); }
     private void positive(BigDecimal amount) { if (amount == null || amount.signum() <= 0) throw new TreasuryException(TreasuryException.Type.BAD_REQUEST, "El valor debe ser mayor que cero"); }
-    private void validatePaymentMethod(Long methodId, Long bankId, String enterpriseId) {var method=paymentMethods.findActive(methodId,enterpriseId).orElseThrow(()->new TreasuryException(TreasuryException.Type.BAD_REQUEST,"Metodo de pago inactivo o inexistente"));if(method.requiresBankAccount()&&bankId==null)throw new TreasuryException(TreasuryException.Type.BAD_REQUEST,"El metodo de pago exige cuenta bancaria");if(!method.requiresBankAccount()&&bankId!=null)throw new TreasuryException(TreasuryException.Type.BAD_REQUEST,"El metodo de pago no admite cuenta bancaria");if(bankId!=null&&!paymentMethods.isActiveBankAccount(bankId,enterpriseId))throw new TreasuryException(TreasuryException.Type.BAD_REQUEST,"Cuenta bancaria inactiva o inexistente");}
+    private void validatePaymentMethod(Long methodId, Long bankId, String enterpriseId) {
+        paymentMethods.validateForPayment(methodId, bankId, enterpriseId);
+    }
     private boolean shouldIgnoreAccountingResult(PaymentVoucher voucher, AccountingResult result) {
         if (result.accepted() && voucher.getStatus() == PaymentVoucherStatus.POSTED) {
             return true;

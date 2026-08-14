@@ -6,4 +6,5 @@ import java.util.Optional;
 public interface IPaymentMethodProviderPort {
     Optional<PaymentMethodData> findActive(Long paymentMethodId, String enterpriseId);
     boolean isActiveBankAccount(Long bankAccountId, String enterpriseId);
+    void validateForPayment(Long paymentMethodId, Long bankAccountId, String enterpriseId);
 }

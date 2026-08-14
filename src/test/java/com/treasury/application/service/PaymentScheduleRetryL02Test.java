@@ -70,8 +70,9 @@ class PaymentScheduleRetryL02Test {
                 schedules, invoices, voucherService, voucherService, voucherQueries,
                 context, transactions, time, paymentMethods);
         lenient().when(context.tenantId()).thenReturn("tenant");
+        lenient().doNothing().when(paymentMethods).validateForPayment(anyLong(), any(), anyString());
         lenient().when(paymentMethods.findActive(anyLong(), anyString()))
-                .thenReturn(Optional.of(new PaymentMethodData(1L, false)));
+                .thenReturn(Optional.of(new PaymentMethodData(1L, false, 1105L)));
         lenient().when(voucherCommands.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         lenient().when(schedules.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
     }

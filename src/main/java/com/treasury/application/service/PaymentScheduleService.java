@@ -95,6 +95,6 @@ public class PaymentScheduleService implements IPaymentScheduleCommandUseCase,
         });
     }
     private PaymentSchedule locked(Long id){return schedules.findLocked(id).orElseThrow(()->notFound("Programación no encontrada"));}
-    private void validatePaymentMethod(Long methodId,Long bankId,String enterpriseId){var method=paymentMethods.findActive(methodId,enterpriseId).orElseThrow(()->new TreasuryException(TreasuryException.Type.BAD_REQUEST,"Metodo de pago inactivo o inexistente"));if(method.requiresBankAccount()&&bankId==null)throw new TreasuryException(TreasuryException.Type.BAD_REQUEST,"El metodo de pago exige cuenta bancaria");if(!method.requiresBankAccount()&&bankId!=null)throw new TreasuryException(TreasuryException.Type.BAD_REQUEST,"El metodo de pago no admite cuenta bancaria");if(bankId!=null&&!paymentMethods.isActiveBankAccount(bankId,enterpriseId))throw new TreasuryException(TreasuryException.Type.BAD_REQUEST,"Cuenta bancaria inactiva o inexistente");}
+    private void validatePaymentMethod(Long methodId,Long bankId,String enterpriseId){paymentMethods.validateForPayment(methodId,bankId,enterpriseId);}
     private TreasuryException notFound(String message){return new TreasuryException(TreasuryException.Type.NOT_FOUND,message);}private void conflict(String message){throw new TreasuryException(TreasuryException.Type.CONFLICT,message);}
 }
