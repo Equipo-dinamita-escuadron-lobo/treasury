@@ -14,9 +14,12 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.context.ActiveProfiles;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.lenient;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -34,7 +37,8 @@ class HexagonalFlowIntegrationTest {
     private final String tenant="flow-tenant";
     @BeforeEach void tenant(){
         TenantContext.setTenantId(tenant);
-        when(paymentMethods.findActive(17L,"enterprise-flow")).thenReturn(java.util.Optional.of(new PaymentMethodData(17L,false)));
+        when(paymentMethods.findActive(17L,"enterprise-flow")).thenReturn(java.util.Optional.of(new PaymentMethodData(17L,false,1105L)));
+        lenient().doNothing().when(paymentMethods).validateForPayment(anyLong(), any(), eq("enterprise-flow"));
         doAnswer(invocation -> {
             CorrelationData correlation = invocation.getArgument(4);
             correlation.getFuture().complete(new CorrelationData.Confirm(true, null));

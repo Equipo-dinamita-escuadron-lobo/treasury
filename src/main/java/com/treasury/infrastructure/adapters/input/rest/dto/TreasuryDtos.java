@@ -35,7 +35,7 @@ public final class TreasuryDtos {
     public record VoucherResponse(Long id, String voucherNumber, String enterpriseId, LocalDate issueDate,
                                   PaymentVoucherStatus status, Long paymentMethodId, Long bankAccountId,
                                   BigDecimal total, String observations, Long accountingEntryId,
-                                  String failureReason, String voidReason, long version,
+                                  String accountingEntryCode, String failureReason, String voidReason, long version,
                                   List<VoucherDetailResponse> details) {}
     public record PayableResponse(Long id, Long sourceInvoiceId, String reference, String enterpriseId,
                                   Long supplierId, BigDecimal originalAmount, BigDecimal paidAmount,
@@ -46,7 +46,7 @@ public final class TreasuryDtos {
     public record ScheduleResponse(Long id, String enterpriseId, LocalDate executionDate,
                                    Long paymentMethodId, Long bankAccountId, String observations,
                                    PaymentScheduleStatus status, Long voucherId, int retryCount,
-                                   String failureReason, long version,
+                                   String failureReason, long version, BigDecimal total,
                                    List<ScheduleDetailResponse> details) {}
     public record WriteOffDetailResponse(Long id, Long supplierId, Long invoiceId,
                                          Long payableAccountId, String payableAccountCode,

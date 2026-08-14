@@ -25,6 +25,11 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 /**
@@ -48,7 +53,8 @@ class PaymentVoucherDraftUpdateIntegrationTest {
     void setUp() {
         TenantContext.setTenantId(TENANT);
         when(paymentMethods.findActive(17L, ENTERPRISE))
-                .thenReturn(Optional.of(new PaymentMethodData(17L, false)));
+                .thenReturn(Optional.of(new PaymentMethodData(17L, false, 1105L)));
+        lenient().doNothing().when(paymentMethods).validateForPayment(anyLong(), any(), eq(ENTERPRISE));
     }
 
     @AfterEach
