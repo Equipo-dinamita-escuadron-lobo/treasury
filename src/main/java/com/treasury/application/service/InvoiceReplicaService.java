@@ -2,12 +2,14 @@ package com.treasury.application.service;
 
 import com.treasury.application.input.IInvoiceSynchronizationUseCase;
 import com.treasury.application.output.IAccountCodeResolverPort;
+import com.treasury.domain.model.AccountCatalogueAccountSnapshot;
 import com.treasury.application.output.ISupplierInvoiceProviderPort;
 import com.treasury.application.output.ITreasuryAuditPersistencePort;
 import com.treasury.domain.exception.TreasuryException;
 import com.treasury.domain.model.SupplierInvoiceReplica;
 import com.treasury.domain.model.command.TreasuryCommands.PurchaseInvoiceEvent;
 import java.math.BigDecimal;
+import java.util.Optional;
 
 public class InvoiceReplicaService implements IInvoiceSynchronizationUseCase {
     private final ISupplierInvoiceProviderPort invoices;
@@ -37,6 +39,7 @@ public class InvoiceReplicaService implements IInvoiceSynchronizationUseCase {
             invoice.setDueDate(event.dueDate()); invoice.setReservedAmount(BigDecimal.ZERO);
             invoice.setPaidAmount(event.paidAmount() == null ? BigDecimal.ZERO : event.paidAmount());
             invoice.setPendingAmount(event.pendingAmount());
+            validatePayableAccount(event);
         } else {
             BigDecimal adjustedPending = invoice.getPendingAmount().add(event.originalAmount().subtract(invoice.getOriginalAmount()));
             if (adjustedPending.compareTo(invoice.getReservedAmount()) < 0)
@@ -62,5 +65,20 @@ public class InvoiceReplicaService implements IInvoiceSynchronizationUseCase {
         boolean looksLikeId = code == null || code.isBlank() || code.equals(String.valueOf(accountId));
         if (!looksLikeId || accountCodes == null) return code;
         return accountCodes.resolveCode(accountId, event.enterpriseId()).orElse(code);
+    }
+
+    private void validatePayableAccount(PurchaseInvoiceEvent event) {
+        if (accountCodes == null || event.payableAccountId() == null) {
+            return;
+        }
+        Optional<AccountCatalogueAccountSnapshot> account = accountCodes.resolveAccount(event.payableAccountId(),
+                event.enterpriseId());
+        if (account.isEmpty()) {
+            return;
+        }
+        if (!account.get().isPayableLiability()) {
+            throw new TreasuryException(TreasuryException.Type.CONFLICT,
+                    "La cuenta por pagar configurada no es una obligación válida del catálogo");
+        }
     }
 }

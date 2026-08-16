@@ -18,7 +18,8 @@ jobs:
     uses:
       Equipo-dinamita-escuadron-lobo/workflows/.github/workflows/backend-on-pull-request.yaml@main
     with:
-      test-suffix: UnitTest
+      # Treasury test classes use the *Test suffix (not *UnitTest).
+      test-suffix: Test
     secrets: inherit
 
   integration-tests:

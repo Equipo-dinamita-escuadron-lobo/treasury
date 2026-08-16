@@ -84,6 +84,8 @@ class PaymentVoucherResponseAssemblerTest {
                 accountingEntryCode,
                 null,
                 null,
+                java.time.Instant.parse("2026-08-14T10:00:00Z"),
+                java.time.Instant.parse("2026-08-14T10:05:00Z"),
                 0L,
                 List.of());
     }

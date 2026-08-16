@@ -149,6 +149,112 @@ class PaymentVoucherServiceTest {
         verify(audit, times(1)).markProcessed("event", "tenant");
     }
 
+    @Test void postedPaymentReducesPendingAndIncreasesPaid() {
+        SupplierInvoiceReplica invoice = invoice(1, 10, "F-1", "100000");
+        PaymentVoucher voucher = voucher(invoice, "30000");
+        voucher.setStatus(PaymentVoucherStatus.POSTING);
+        when(audit.wasProcessed("post-event")).thenReturn(false);
+        when(voucherQueries.findById(5L)).thenReturn(Optional.of(voucher));
+        when(invoices.findLocked(1L, "ent")).thenReturn(Optional.of(invoice));
+        invoice.reserve(bd("30000"));
+
+        service.applyAccountingResult(new AccountingResult("post-event", "PAYMENT_VOUCHER", 5L, true, 1L, null, "tenant"));
+
+        assertThat(invoice.getPaidAmount()).isEqualByComparingTo("30000");
+        assertThat(invoice.getPendingAmount()).isEqualByComparingTo("70000");
+    }
+
+    @Test void acceptedVoidRestoresPendingAndReducesPaid() {
+        SupplierInvoiceReplica invoice = invoice(1, 10, "F-1", "100000");
+        invoice.setPaidAmount(bd("30000"));
+        invoice.setPendingAmount(bd("70000"));
+        PaymentVoucher voucher = voucher(invoice, "30000");
+        voucher.setStatus(PaymentVoucherStatus.VOIDING);
+        when(audit.wasProcessed("void-event")).thenReturn(false);
+        when(voucherQueries.findById(5L)).thenReturn(Optional.of(voucher));
+        when(invoices.findLocked(1L, "ent")).thenReturn(Optional.of(invoice));
+
+        service.applyAccountingResult(new AccountingResult("void-event", null, "VOID", "PAYMENT_VOUCHER", 5L, true, 2L, null, "tenant"));
+
+        assertThat(voucher.getStatus()).isEqualTo(PaymentVoucherStatus.VOIDED);
+        assertThat(invoice.getPaidAmount()).isZero();
+        assertThat(invoice.getPendingAmount()).isEqualByComparingTo("100000");
+    }
+
+    @Test void duplicateVoidAckDoesNotReverseTwice() {
+        SupplierInvoiceReplica invoice = invoice(1, 10, "F-1", "100000");
+        invoice.setPaidAmount(bd("30000"));
+        invoice.setPendingAmount(bd("70000"));
+        PaymentVoucher voucher = voucher(invoice, "30000");
+        voucher.setStatus(PaymentVoucherStatus.VOIDED);
+        when(audit.wasProcessed("void-dup")).thenReturn(false);
+        when(voucherQueries.findById(5L)).thenReturn(Optional.of(voucher));
+
+        service.applyAccountingResult(new AccountingResult("void-dup", null, "VOID", "PAYMENT_VOUCHER", 5L, true, 2L, null, "tenant"));
+
+        assertThat(invoice.getPaidAmount()).isEqualByComparingTo("30000");
+        assertThat(invoice.getPendingAmount()).isEqualByComparingTo("70000");
+        verify(invoices, never()).findLocked(anyLong(), anyString());
+    }
+
+    @Test void voidAckBeforeVoidingDoesNotAlterBalanceOrConsumeEvent() {
+        SupplierInvoiceReplica invoice = invoice(1, 10, "F-1", "100000");
+        invoice.setPaidAmount(bd("30000"));
+        invoice.setPendingAmount(bd("70000"));
+        PaymentVoucher voucher = voucher(invoice, "30000");
+        voucher.setStatus(PaymentVoucherStatus.POSTED);
+        when(audit.wasProcessed("early-void")).thenReturn(false);
+        when(voucherQueries.findById(5L)).thenReturn(Optional.of(voucher));
+
+        service.applyAccountingResult(new AccountingResult("early-void", null, "VOID", "PAYMENT_VOUCHER", 5L, true, 2L, null, "tenant"));
+
+        assertThat(invoice.getPaidAmount()).isEqualByComparingTo("30000");
+        assertThat(invoice.getPendingAmount()).isEqualByComparingTo("70000");
+        verify(audit, never()).markProcessed(anyString(), anyString());
+    }
+
+    @Test void failedVoidDoesNotAlterBalance() {
+        SupplierInvoiceReplica invoice = invoice(1, 10, "F-1", "100000");
+        invoice.setPaidAmount(bd("30000"));
+        invoice.setPendingAmount(bd("70000"));
+        PaymentVoucher voucher = voucher(invoice, "30000");
+        voucher.setStatus(PaymentVoucherStatus.VOIDING);
+        when(audit.wasProcessed("void-fail")).thenReturn(false);
+        when(voucherQueries.findById(5L)).thenReturn(Optional.of(voucher));
+
+        service.applyAccountingResult(new AccountingResult("void-fail", null, "VOID", "PAYMENT_VOUCHER", 5L, false, null, "rechazo", "tenant"));
+
+        assertThat(voucher.getStatus()).isEqualTo(PaymentVoucherStatus.VOID_FAILED);
+        assertThat(invoice.getPaidAmount()).isEqualByComparingTo("30000");
+        assertThat(invoice.getPendingAmount()).isEqualByComparingTo("70000");
+    }
+
+    @Test void newPaymentAfterVoidWorks() {
+        SupplierInvoiceReplica invoice = invoice(1, 10, "F-1", "100000");
+        invoice.setPaidAmount(bd("30000"));
+        invoice.setPendingAmount(bd("70000"));
+        PaymentVoucher voided = voucher(invoice, "30000");
+        voided.setStatus(PaymentVoucherStatus.VOIDING);
+        when(audit.wasProcessed("void-event")).thenReturn(false);
+        when(voucherQueries.findById(5L)).thenReturn(Optional.of(voided));
+        when(invoices.findLocked(1L, "ent")).thenReturn(Optional.of(invoice));
+
+        service.applyAccountingResult(new AccountingResult("void-event", null, "VOID", "PAYMENT_VOUCHER", 5L, true, 2L, null, "tenant"));
+        assertThat(invoice.getPendingAmount()).isEqualByComparingTo("100000");
+
+        PaymentVoucher repost = voucher(invoice, "60000");
+        repost.setId(6L);
+        repost.setStatus(PaymentVoucherStatus.POSTING);
+        when(audit.wasProcessed("post-2")).thenReturn(false);
+        when(voucherQueries.findById(6L)).thenReturn(Optional.of(repost));
+        invoice.reserve(bd("60000"));
+
+        service.applyAccountingResult(new AccountingResult("post-2", "PAYMENT_VOUCHER", 6L, true, 3L, null, "tenant"));
+
+        assertThat(invoice.getPaidAmount()).isEqualByComparingTo("60000");
+        assertThat(invoice.getPendingAmount()).isEqualByComparingTo("40000");
+    }
+
     private Voucher command(Detail... details) {
         return new Voucher("ent", LocalDate.now(), 1L, null, "test", List.of(details));
     }

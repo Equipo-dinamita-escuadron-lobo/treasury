@@ -6,13 +6,11 @@ import com.treasury.domain.model.command.TreasuryCommands.*;
 import com.treasury.application.output.*;
 import com.treasury.domain.exception.TreasuryException;
 import com.treasury.domain.model.*;
-import lombok.RequiredArgsConstructor;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 
-@RequiredArgsConstructor
 public class PaymentVoucherService implements IPaymentVoucherCommandUseCase, IPaymentVoucherQueryUseCase {
     private final IPaymentVoucherCommandPersistencePort voucherCommands;
     private final IPaymentVoucherQueryPersistencePort voucherQueries;
@@ -21,6 +19,28 @@ public class PaymentVoucherService implements IPaymentVoucherCommandUseCase, IPa
     private final ITreasuryAuditPersistencePort audit;
     private final IExecutionContextPort context;
     private final IPaymentMethodProviderPort paymentMethods;
+    private final SupplierInvoiceBalanceReconciliationService reconciliation;
+
+    public PaymentVoucherService(IPaymentVoucherCommandPersistencePort voucherCommands,
+            IPaymentVoucherQueryPersistencePort voucherQueries, ISupplierInvoiceProviderPort invoices,
+            ITreasuryEventPublisher events, ITreasuryAuditPersistencePort audit, IExecutionContextPort context,
+            IPaymentMethodProviderPort paymentMethods) {
+        this(voucherCommands, voucherQueries, invoices, events, audit, context, paymentMethods, null);
+    }
+
+    public PaymentVoucherService(IPaymentVoucherCommandPersistencePort voucherCommands,
+            IPaymentVoucherQueryPersistencePort voucherQueries, ISupplierInvoiceProviderPort invoices,
+            ITreasuryEventPublisher events, ITreasuryAuditPersistencePort audit, IExecutionContextPort context,
+            IPaymentMethodProviderPort paymentMethods, SupplierInvoiceBalanceReconciliationService reconciliation) {
+        this.voucherCommands = voucherCommands;
+        this.voucherQueries = voucherQueries;
+        this.invoices = invoices;
+        this.events = events;
+        this.audit = audit;
+        this.context = context;
+        this.paymentMethods = paymentMethods;
+        this.reconciliation = reconciliation;
+    }
 
     @Override
     public PaymentVoucher create(Voucher command) {
@@ -102,8 +122,15 @@ public class PaymentVoucherService implements IPaymentVoucherCommandUseCase, IPa
         if (!"PAYMENT_VOUCHER".equals(result.documentType()) || audit.wasProcessed(result.eventId())) return;
         PaymentVoucher voucher = voucherQueries.findById(result.documentId()).orElseThrow(() -> notFound("Comprobante no encontrado"));
         if (result.isVoid()) {
-            if (voucher.getStatus() != PaymentVoucherStatus.VOIDING) {
+            if (voucher.getStatus() == PaymentVoucherStatus.VOIDED) {
                 audit.markProcessed(result.eventId(), result.tenantId());
+                return;
+            }
+            if (voucher.getStatus() == PaymentVoucherStatus.VOID_FAILED && !result.accepted()) {
+                audit.markProcessed(result.eventId(), result.tenantId());
+                return;
+            }
+            if (voucher.getStatus() != PaymentVoucherStatus.VOIDING) {
                 return;
             }
             if (result.accepted()) {
@@ -115,6 +142,11 @@ public class PaymentVoucherService implements IPaymentVoucherCommandUseCase, IPa
             }
             voucher.applyVoidAccountingResult(result.accepted(), result.reason());
             voucherCommands.save(voucher);
+            if (result.accepted()) {
+                for (PaymentVoucherDetail detail : voucher.getDetails()) {
+                    reconcileInvoice(detail.getInvoiceId(), voucher.getEnterpriseId());
+                }
+            }
             audit.markProcessed(result.eventId(), result.tenantId());
             return;
         }
@@ -130,7 +162,13 @@ public class PaymentVoucherService implements IPaymentVoucherCommandUseCase, IPa
             invoices.save(invoice);
         }
         voucher.applyAccountingResult(result.accepted(), result.accountingEntryId(), result.reason());
-        PaymentVoucher saved = voucherCommands.save(voucher); audit.markProcessed(result.eventId(), result.tenantId());
+        PaymentVoucher saved = voucherCommands.save(voucher);
+        if (result.accepted()) {
+            for (PaymentVoucherDetail detail : voucher.getDetails()) {
+                reconcileInvoice(detail.getInvoiceId(), voucher.getEnterpriseId());
+            }
+        }
+        audit.markProcessed(result.eventId(), result.tenantId());
         if (result.accepted()) enqueue(saved, "PAYMENT_VOUCHER_POSTED");
     }
 
@@ -156,6 +194,12 @@ public class PaymentVoucherService implements IPaymentVoucherCommandUseCase, IPa
             return true;
         }
         return false;
+    }
+
+    private void reconcileInvoice(Long invoiceId, String enterpriseId) {
+        if (reconciliation != null) {
+            reconciliation.reconcile(invoiceId, enterpriseId);
+        }
     }
 
     private TreasuryException notFound(String message) { return new TreasuryException(TreasuryException.Type.NOT_FOUND, message); }
