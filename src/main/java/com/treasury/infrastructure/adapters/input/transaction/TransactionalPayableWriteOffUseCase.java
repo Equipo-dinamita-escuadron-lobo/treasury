@@ -4,10 +4,12 @@ import com.treasury.application.input.IPayableWriteOffCommandUseCase;
 import com.treasury.application.input.IPayableWriteOffQueryUseCase;
 import com.treasury.application.output.IExecutionContextPort;
 import com.treasury.application.output.IPayableWriteOffPersistencePort;
+import com.treasury.application.output.IPaymentSchedulePersistencePort;
 import com.treasury.application.output.ISupplierInvoiceProviderPort;
 import com.treasury.application.output.ITreasuryAuditPersistencePort;
 import com.treasury.application.output.ITreasuryEventPublisher;
 import com.treasury.application.service.PayableWriteOffService;
+import com.treasury.application.service.PaymentScheduleBalanceGuard;
 import com.treasury.domain.model.PayableWriteOff;
 import com.treasury.domain.model.command.TreasuryCommands.AccountingResult;
 import com.treasury.domain.model.command.TreasuryCommands.WriteOff;
@@ -22,8 +24,10 @@ public class TransactionalPayableWriteOffUseCase
 
     public TransactionalPayableWriteOffUseCase(IPayableWriteOffPersistencePort writeOffs,
             ISupplierInvoiceProviderPort invoices, ITreasuryEventPublisher events,
-            ITreasuryAuditPersistencePort audit, IExecutionContextPort context) {
-        this.delegate = new PayableWriteOffService(writeOffs, invoices, events, audit, context);
+            ITreasuryAuditPersistencePort audit, IExecutionContextPort context,
+            IPaymentSchedulePersistencePort schedules) {
+        PaymentScheduleBalanceGuard scheduleBalanceGuard = new PaymentScheduleBalanceGuard(schedules);
+        this.delegate = new PayableWriteOffService(writeOffs, invoices, events, audit, context, scheduleBalanceGuard);
     }
 
     @Override @Transactional public PayableWriteOff create(WriteOff command) { return delegate.create(command); }

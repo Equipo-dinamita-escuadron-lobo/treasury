@@ -12,6 +12,7 @@ import com.treasury.application.output.ITimeProviderPort;
 import com.treasury.application.output.ITransactionRunnerPort;
 import com.treasury.application.output.IPaymentMethodProviderPort;
 import com.treasury.application.output.IPaymentVoucherQueryPersistencePort;
+import com.treasury.application.service.PaymentScheduleBalanceGuard;
 import com.treasury.application.service.PaymentScheduleService;
 import com.treasury.domain.model.PaymentSchedule;
 import com.treasury.domain.model.command.TreasuryCommands.Schedule;
@@ -35,8 +36,10 @@ public class TransactionalPaymentScheduleUseCase implements IPaymentScheduleComm
             IExecutionContextPort context,
             ITransactionRunnerPort transactions, ITimeProviderPort time,
             IPaymentMethodProviderPort paymentMethods) {
+        PaymentScheduleBalanceGuard scheduleBalanceGuard = new PaymentScheduleBalanceGuard(schedules);
         this.delegate = new PaymentScheduleService(schedules, invoices, voucherCommands,
-                voucherQueries, voucherQueryPersistence, context, transactions, time, paymentMethods);
+                voucherQueries, voucherQueryPersistence, context, transactions, time, paymentMethods,
+                scheduleBalanceGuard);
     }
 
     @Override @Transactional public PaymentSchedule create(Schedule command) { return delegate.create(command); }

@@ -9,12 +9,10 @@ import com.treasury.domain.model.command.TreasuryCommands.*;
 import com.treasury.application.output.*;
 import com.treasury.domain.exception.TreasuryException;
 import com.treasury.domain.model.*;
-import lombok.RequiredArgsConstructor;
 import java.time.LocalDate;
 import java.time.Instant;
 import java.util.*;
 
-@RequiredArgsConstructor
 public class PaymentScheduleService implements IPaymentScheduleCommandUseCase,
         IPaymentScheduleQueryUseCase, IPaymentScheduleExecutionUseCase {
     private final IPaymentSchedulePersistencePort schedules;
@@ -26,6 +24,32 @@ public class PaymentScheduleService implements IPaymentScheduleCommandUseCase,
     private final ITransactionRunnerPort transactions;
     private final ITimeProviderPort time;
     private final IPaymentMethodProviderPort paymentMethods;
+    private final PaymentScheduleBalanceGuard scheduleBalanceGuard;
+
+    public PaymentScheduleService(IPaymentSchedulePersistencePort schedules, ISupplierInvoiceProviderPort invoices,
+            IPaymentVoucherCommandUseCase voucherCommands, IPaymentVoucherQueryUseCase voucherQueries,
+            IPaymentVoucherQueryPersistencePort voucherQueryPersistence, IExecutionContextPort context,
+            ITransactionRunnerPort transactions, ITimeProviderPort time, IPaymentMethodProviderPort paymentMethods) {
+        this(schedules, invoices, voucherCommands, voucherQueries, voucherQueryPersistence, context, transactions, time,
+                paymentMethods, null);
+    }
+
+    public PaymentScheduleService(IPaymentSchedulePersistencePort schedules, ISupplierInvoiceProviderPort invoices,
+            IPaymentVoucherCommandUseCase voucherCommands, IPaymentVoucherQueryUseCase voucherQueries,
+            IPaymentVoucherQueryPersistencePort voucherQueryPersistence, IExecutionContextPort context,
+            ITransactionRunnerPort transactions, ITimeProviderPort time, IPaymentMethodProviderPort paymentMethods,
+            PaymentScheduleBalanceGuard scheduleBalanceGuard) {
+        this.schedules = schedules;
+        this.invoices = invoices;
+        this.voucherCommands = voucherCommands;
+        this.voucherQueries = voucherQueries;
+        this.voucherQueryPersistence = voucherQueryPersistence;
+        this.context = context;
+        this.transactions = transactions;
+        this.time = time;
+        this.paymentMethods = paymentMethods;
+        this.scheduleBalanceGuard = scheduleBalanceGuard;
+    }
 
     @Override public PaymentSchedule create(Schedule command) {
         PaymentSchedule schedule=new PaymentSchedule();schedule.setStatus(PaymentScheduleStatus.SCHEDULED);schedule.setTenantId(context.tenantId());apply(schedule,command);return schedules.save(schedule);
@@ -33,6 +57,8 @@ public class PaymentScheduleService implements IPaymentScheduleCommandUseCase,
     @Override public PaymentSchedule update(Long id,Schedule command){PaymentSchedule schedule=locked(id);schedule.ensureEditable();schedule.setStatus(PaymentScheduleStatus.SCHEDULED);schedule.setFailureReason(null);apply(schedule,command);return schedules.save(schedule);}
     private void apply(PaymentSchedule schedule,Schedule command){
         validatePaymentMethod(command.paymentMethodId(),command.bankAccountId(),command.enterpriseId());
+        List<Long> invoiceIds=command.details().stream().map(Detail::invoiceId).toList();
+        assertNewScheduleAllowed(command.enterpriseId(),invoiceIds,schedule.getId());
         schedule.setEnterpriseId(command.enterpriseId());schedule.setExecutionDate(command.executionDate());schedule.setPaymentMethodId(command.paymentMethodId());schedule.setBankAccountId(command.bankAccountId());schedule.setObservations(command.observations());
         Set<Long> unique=new HashSet<>();List<PaymentScheduleDetail> details=new ArrayList<>();
         for(Detail requested:command.details()){
@@ -48,10 +74,13 @@ public class PaymentScheduleService implements IPaymentScheduleCommandUseCase,
     @Override public PaymentSchedule find(Long id){return schedules.find(id).orElseThrow(()->notFound("Programación no encontrada"));}
     @Override public List<PaymentSchedule> list(ScheduleFilter filter){return schedules.search(filter);}
     @Override public PaymentSchedule execute(Long id){
-        PaymentSchedule schedule=locked(id);if(schedule.getStatus()!=PaymentScheduleStatus.SCHEDULED&&schedule.getStatus()!=PaymentScheduleStatus.FAILED)return schedule;schedule.start();schedule=schedules.save(schedule);
+        PaymentSchedule schedule=locked(id);if(schedule.getStatus()!=PaymentScheduleStatus.SCHEDULED&&schedule.getStatus()!=PaymentScheduleStatus.FAILED)return schedule;
+        try{validateExecutableDetails(schedule);}catch(RuntimeException ex){schedule.failed(ex.getMessage());return schedules.save(schedule);}
+        schedule.start();schedule=schedules.save(schedule);
         try{
             PaymentVoucher voucher;
-            if(schedule.getVoucherId()==null){Voucher command=new Voucher(schedule.getEnterpriseId(),time.today(),schedule.getPaymentMethodId(),schedule.getBankAccountId(),schedule.getObservations(),schedule.getDetails().stream().map(d->new Detail(d.getSupplierId(),d.getInvoiceId(),d.getAmount())).toList());voucher=voucherCommands.create(command);schedule.setVoucherId(voucher.getId());schedule=schedules.save(schedule);}else voucher=voucherQueries.find(schedule.getVoucherId(),schedule.getEnterpriseId());
+            List<PaymentScheduleDetail> executable=schedule.activeDetails();
+            if(schedule.getVoucherId()==null){Voucher command=new Voucher(schedule.getEnterpriseId(),time.today(),schedule.getPaymentMethodId(),schedule.getBankAccountId(),schedule.getObservations(),executable.stream().map(d->new Detail(d.getSupplierId(),d.getInvoiceId(),d.getAmount())).toList());voucher=voucherCommands.create(command);schedule.setVoucherId(voucher.getId());schedule=schedules.save(schedule);}else voucher=voucherQueries.find(schedule.getVoucherId(),schedule.getEnterpriseId());
             voucherCommands.post(voucher.getId(),schedule.getEnterpriseId(),"schedule-"+schedule.getId()+"-"+schedule.getRetryCount());schedule.waitingAccounting();
         }catch(RuntimeException ex){schedule.failed(ex.getMessage());}
         return schedules.save(schedule);
@@ -95,6 +124,19 @@ public class PaymentScheduleService implements IPaymentScheduleCommandUseCase,
         });
     }
     private PaymentSchedule locked(Long id){return schedules.findLocked(id).orElseThrow(()->notFound("Programación no encontrada"));}
+    private void validateExecutableDetails(PaymentSchedule schedule){
+        List<PaymentScheduleDetail> executable=schedule.activeDetails();
+        if(executable.isEmpty())conflict("La programación no tiene obligaciones ejecutables");
+        for(PaymentScheduleDetail detail:executable){
+            SupplierInvoiceReplica invoice=invoices.findById(detail.getInvoiceId()).filter(item->item.getEnterpriseId().equals(schedule.getEnterpriseId())&&item.isActive()).orElseThrow(()->notFound("Obligación no encontrada"));
+            if(detail.getAmount().compareTo(invoice.available())>0)conflict("El monto programado supera el saldo disponible de "+invoice.getReference());
+        }
+    }
     private void validatePaymentMethod(Long methodId,Long bankId,String enterpriseId){paymentMethods.validateForPayment(methodId,bankId,enterpriseId);}
+    private void assertNewScheduleAllowed(String enterpriseId, List<Long> invoiceIds, Long excludeScheduleId) {
+        if (scheduleBalanceGuard != null) {
+            scheduleBalanceGuard.assertNewScheduleAllowed(enterpriseId, invoiceIds, excludeScheduleId);
+        }
+    }
     private TreasuryException notFound(String message){return new TreasuryException(TreasuryException.Type.NOT_FOUND,message);}private void conflict(String message){throw new TreasuryException(TreasuryException.Type.CONFLICT,message);}
 }

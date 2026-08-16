@@ -44,7 +44,8 @@ public final class TreasuryDtos {
                                   BigDecimal pendingAmount, BigDecimal reservedAmount, BigDecimal availableAmount,
                                   LocalDate issueDate, LocalDate originalDueDate, LocalDate dueDate,
                                   Long payableAccountId, String payableAccountCode, boolean active, long version) {}
-    public record ScheduleDetailResponse(Long id, Long supplierId, Long invoiceId, BigDecimal amount) {}
+    public record ScheduleDetailResponse(Long id, Long supplierId, Long invoiceId, BigDecimal amount,
+                                         boolean canceled, String cancellationReason) {}
     public record ScheduleResponse(Long id, String enterpriseId, LocalDate executionDate,
                                    Long paymentMethodId, Long bankAccountId, String observations,
                                    PaymentScheduleStatus status, Long voucherId, String voucherNumber,

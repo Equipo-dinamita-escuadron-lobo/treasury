@@ -12,5 +12,5 @@ import static org.assertj.core.api.Assertions.assertThat;
 class FlywayMigrationTest {
     @Autowired Flyway flyway;
     @Autowired DataSource dataSource;
-    @Test void migratesEmptyDatabaseAndHibernateValidatesSchema()throws Exception{assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("2");try(var connection=dataSource.getConnection();var result=connection.getMetaData().getTables(null,null,"PAYMENT_VOUCHERS",new String[]{"TABLE"})){assertThat(result.next()).isTrue();}}
+    @Test void migratesEmptyDatabaseAndHibernateValidatesSchema()throws Exception{assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("3");try(var connection=dataSource.getConnection();var result=connection.getMetaData().getTables(null,null,"PAYMENT_VOUCHERS",new String[]{"TABLE"})){assertThat(result.next()).isTrue();}}
 }

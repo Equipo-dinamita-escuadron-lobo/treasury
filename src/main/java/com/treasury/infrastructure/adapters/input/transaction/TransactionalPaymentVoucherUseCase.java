@@ -10,6 +10,8 @@ import com.treasury.application.output.ISupplierInvoiceProviderPort;
 import com.treasury.application.output.ITreasuryAuditPersistencePort;
 import com.treasury.application.output.ITreasuryEventPublisher;
 import com.treasury.application.output.IPaymentMethodProviderPort;
+import com.treasury.application.output.IPaymentSchedulePersistencePort;
+import com.treasury.application.service.PaymentScheduleBalanceGuard;
 import com.treasury.application.service.PaymentVoucherService;
 import com.treasury.application.service.SupplierInvoiceBalanceReconciliationService;
 import com.treasury.domain.model.PaymentVoucher;
@@ -30,11 +32,13 @@ public class TransactionalPaymentVoucherUseCase
             ISupplierInvoiceProviderPort invoices, ITreasuryEventPublisher events,
             ITreasuryAuditPersistencePort audit, IExecutionContextPort context,
             IPaymentMethodProviderPort paymentMethods,
-            IPayableWriteOffPersistencePort writeOffs) {
+            IPayableWriteOffPersistencePort writeOffs,
+            IPaymentSchedulePersistencePort schedules) {
         SupplierInvoiceBalanceReconciliationService reconciliation =
                 new SupplierInvoiceBalanceReconciliationService(invoices, voucherQueries, writeOffs);
+        PaymentScheduleBalanceGuard scheduleBalanceGuard = new PaymentScheduleBalanceGuard(schedules);
         this.delegate = new PaymentVoucherService(voucherCommands, voucherQueries, invoices, events, audit, context,
-                paymentMethods, reconciliation);
+                paymentMethods, reconciliation, scheduleBalanceGuard);
     }
 
     @Override @Transactional public PaymentVoucher create(Voucher command) { return delegate.create(command); }
