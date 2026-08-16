@@ -15,6 +15,9 @@ import java.util.*;
 
 public class PaymentScheduleService implements IPaymentScheduleCommandUseCase,
         IPaymentScheduleQueryUseCase, IPaymentScheduleExecutionUseCase {
+    public static final String FUTURE_EXECUTION_DATE_REQUIRED =
+            "La fecha de programación debe ser posterior a hoy. Para realizar el pago ahora, utiliza la opción Pagar.";
+
     private final IPaymentSchedulePersistencePort schedules;
     private final ISupplierInvoiceProviderPort invoices;
     private final IPaymentVoucherCommandUseCase voucherCommands;
@@ -56,6 +59,7 @@ public class PaymentScheduleService implements IPaymentScheduleCommandUseCase,
     }
     @Override public PaymentSchedule update(Long id,Schedule command){PaymentSchedule schedule=locked(id);schedule.ensureEditable();schedule.setStatus(PaymentScheduleStatus.SCHEDULED);schedule.setFailureReason(null);apply(schedule,command);return schedules.save(schedule);}
     private void apply(PaymentSchedule schedule,Schedule command){
+        validateFutureExecutionDate(command.executionDate());
         validatePaymentMethod(command.paymentMethodId(),command.bankAccountId(),command.enterpriseId());
         List<Long> invoiceIds=command.details().stream().map(Detail::invoiceId).toList();
         assertNewScheduleAllowed(command.enterpriseId(),invoiceIds,schedule.getId());
@@ -133,6 +137,11 @@ public class PaymentScheduleService implements IPaymentScheduleCommandUseCase,
         }
     }
     private void validatePaymentMethod(Long methodId,Long bankId,String enterpriseId){paymentMethods.validateForPayment(methodId,bankId,enterpriseId);}
+    private void validateFutureExecutionDate(LocalDate executionDate) {
+        if (executionDate == null || !executionDate.isAfter(time.today())) {
+            throw new TreasuryException(TreasuryException.Type.BAD_REQUEST, FUTURE_EXECUTION_DATE_REQUIRED);
+        }
+    }
     private void assertNewScheduleAllowed(String enterpriseId, List<Long> invoiceIds, Long excludeScheduleId) {
         if (scheduleBalanceGuard != null) {
             scheduleBalanceGuard.assertNewScheduleAllowed(enterpriseId, invoiceIds, excludeScheduleId);

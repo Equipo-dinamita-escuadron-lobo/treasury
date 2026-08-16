@@ -9,9 +9,14 @@ import com.treasury.application.output.ISupplierInvoiceProviderPort;
 import com.treasury.application.output.ITimeProviderPort;
 import com.treasury.application.output.IPaymentVoucherQueryPersistencePort;
 import com.treasury.application.output.ITransactionRunnerPort;
+import com.treasury.domain.exception.TreasuryException;
 import com.treasury.domain.model.DuePaymentSchedule;
 import com.treasury.domain.model.PaymentSchedule;
 import com.treasury.domain.model.PaymentScheduleStatus;
+import com.treasury.domain.model.SupplierInvoiceReplica;
+import com.treasury.domain.model.command.TreasuryCommands.Detail;
+import com.treasury.domain.model.command.TreasuryCommands.Schedule;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -21,6 +26,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -60,5 +66,60 @@ class PaymentScheduleServiceTest {
         order.verify(context).runAsTenant(eq("tenant-a"), any(Runnable.class));
         order.verify(transactions).run(any(Runnable.class));
         verify(schedules).findLocked(3L);
+    }
+
+    @Test void rejectsTodayAsExecutionDate() {
+        LocalDate today = LocalDate.of(2026, 8, 16);
+        when(time.today()).thenReturn(today);
+        Schedule command = scheduleCommand(today);
+
+        assertThatThrownBy(() -> service.create(command))
+                .isInstanceOf(TreasuryException.class)
+                .hasMessageContaining(PaymentScheduleService.FUTURE_EXECUTION_DATE_REQUIRED);
+
+        verify(schedules, never()).save(any());
+        verifyNoInteractions(invoices);
+    }
+
+    @Test void rejectsPastExecutionDate() {
+        LocalDate today = LocalDate.of(2026, 8, 16);
+        when(time.today()).thenReturn(today);
+        Schedule command = scheduleCommand(today.minusDays(1));
+
+        assertThatThrownBy(() -> service.create(command))
+                .isInstanceOf(TreasuryException.class)
+                .hasMessageContaining(PaymentScheduleService.FUTURE_EXECUTION_DATE_REQUIRED);
+
+        verify(schedules, never()).save(any());
+        verifyNoInteractions(invoices);
+    }
+
+    @Test void allowsFutureExecutionDate() {
+        LocalDate today = LocalDate.of(2026, 8, 16);
+        when(time.today()).thenReturn(today);
+        when(context.tenantId()).thenReturn("tenant");
+        when(invoices.findById(11L)).thenReturn(Optional.of(invoice()));
+        when(schedules.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        Schedule command = scheduleCommand(today.plusDays(1));
+
+        service.create(command);
+
+        verify(schedules).save(any());
+    }
+
+    private static Schedule scheduleCommand(LocalDate executionDate) {
+        return new Schedule("ent", executionDate, 1L, null, "obs",
+                List.of(new Detail(10L, 11L, new BigDecimal("100"))));
+    }
+
+    private static SupplierInvoiceReplica invoice() {
+        SupplierInvoiceReplica invoice = new SupplierInvoiceReplica();
+        invoice.setId(11L);
+        invoice.setEnterpriseId("ent");
+        invoice.setSupplierId(10L);
+        invoice.setPendingAmount(new BigDecimal("100"));
+        invoice.setReservedAmount(BigDecimal.ZERO);
+        invoice.setActive(true);
+        return invoice;
     }
 }

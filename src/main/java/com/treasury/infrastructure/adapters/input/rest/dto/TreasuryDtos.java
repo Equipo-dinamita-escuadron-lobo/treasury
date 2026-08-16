@@ -21,7 +21,7 @@ public final class TreasuryDtos {
     public record VoidRequest(@NotBlank @Size(max=500) String reason) {}
     public record DueDateRequest(@NotNull LocalDate dueDate, @NotBlank @Size(max=500) String reason) {}
     public record ReconcileSupplierResponse(int reconciledInvoices) {}
-    public record ScheduleRequest(@NotBlank String enterpriseId, @NotNull @FutureOrPresent LocalDate executionDate,
+    public record ScheduleRequest(@NotBlank String enterpriseId, @NotNull @Future LocalDate executionDate,
                                   @NotNull Long paymentMethodId, Long bankAccountId,
                                   @Size(max=500) String observations,
                                   @NotEmpty List<@Valid VoucherDetailRequest> details) {}
