@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
@@ -185,6 +186,7 @@ class PayableQueryServiceTest {
         voidedWriteOff.setStatus(WriteOffStatus.VOIDED);
         voidedWriteOff.setCreatedAt(Instant.parse("2026-08-10T12:00:00Z"));
         voidedWriteOff.setUpdatedAt(Instant.parse("2026-08-12T15:00:00Z"));
+        voidedWriteOff.setAccountingEntryId(99L);
         voidedWriteOff.setDetails(List.of(writeOffDetail));
         when(writeOffs.findByEnterprise(enterpriseId)).thenReturn(List.of(voidedWriteOff));
 
@@ -194,6 +196,48 @@ class PayableQueryServiceTest {
         assertEquals(new BigDecimal("357000"), statement.pending());
         assertEquals(1, statement.writeOffs().size());
         assertEquals(WriteOffStatus.VOIDED, statement.writeOffs().get(0).getStatus());
+    }
+
+    @Test
+    void statementExcludesDraftDiscardedAndFailedWriteOffsFromTrace() {
+        LocalDate from = LocalDate.of(2026, 8, 1);
+        LocalDate to = LocalDate.of(2026, 8, 31);
+        Long supplierId = 78L;
+        String enterpriseId = "enterprise-a";
+
+        SupplierInvoiceReplica invoice = invoice(10L, supplierId, "FC-357", from.plusDays(2),
+                new BigDecimal("357000"), BigDecimal.ZERO, new BigDecimal("357000"));
+        when(invoices.findForStatement(enterpriseId, supplierId, null, to, null, null)).thenReturn(List.of(invoice));
+        when(vouchers.search(any())).thenReturn(new com.treasury.domain.model.command.TreasuryCommands.PageResult<>(
+                List.of(), 0, 0, 0, 10000));
+
+        PayableWriteOffDetail detail = new PayableWriteOffDetail();
+        detail.setSupplierId(supplierId);
+        detail.setInvoiceId(10L);
+        detail.setAmount(new BigDecimal("100000"));
+
+        PayableWriteOff draft = new PayableWriteOff();
+        draft.setStatus(WriteOffStatus.DRAFT);
+        draft.setCreatedAt(Instant.parse("2026-08-10T12:00:00Z"));
+        draft.setDetails(List.of(detail));
+
+        PayableWriteOff discardedDraft = new PayableWriteOff();
+        discardedDraft.setStatus(WriteOffStatus.VOIDED);
+        discardedDraft.setCreatedAt(Instant.parse("2026-08-11T12:00:00Z"));
+        discardedDraft.setUpdatedAt(Instant.parse("2026-08-11T12:00:00Z"));
+        discardedDraft.setDetails(List.of(detail));
+
+        PayableWriteOff failed = new PayableWriteOff();
+        failed.setStatus(WriteOffStatus.FAILED);
+        failed.setCreatedAt(Instant.parse("2026-08-12T12:00:00Z"));
+        failed.setDetails(List.of(detail));
+
+        when(writeOffs.findByEnterprise(enterpriseId)).thenReturn(List.of(draft, discardedDraft, failed));
+
+        SupplierStatement statement = service.statement(enterpriseId, supplierId, from, to, null, null);
+
+        assertEquals(BigDecimal.ZERO, statement.writeOffTotal());
+        assertTrue(statement.writeOffs().isEmpty());
     }
 
     private static SupplierInvoiceReplica invoice(Long id, Long supplierId, String reference, LocalDate issueDate,

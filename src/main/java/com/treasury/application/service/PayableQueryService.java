@@ -159,7 +159,13 @@ public class PayableQueryService implements IPayableCommandUseCase, IPayableQuer
         return true;
     }
     private boolean isStatementTraceWriteOff(PayableWriteOff writeOff) {
-        return writeOff.getStatus() == WriteOffStatus.POSTED || writeOff.getStatus() == WriteOffStatus.VOIDED;
+        if (writeOff.getStatus() == WriteOffStatus.POSTED) {
+            return true;
+        }
+        if (writeOff.getStatus() == WriteOffStatus.VOIDED) {
+            return writeOff.getAccountingEntryId() != null;
+        }
+        return false;
     }
     private boolean isWriteOffTraceableInPeriod(PayableWriteOff writeOff, LocalDate from, LocalDate to) {
         if (writeOff.getStatus() == WriteOffStatus.POSTED) {
