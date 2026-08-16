@@ -5,6 +5,7 @@ import com.treasury.application.input.IPaymentScheduleExecutionUseCase;
 import com.treasury.application.input.IPaymentScheduleQueryUseCase;
 import com.treasury.domain.model.command.TreasuryCommands.*;
 import com.treasury.domain.model.*;
+import com.treasury.infrastructure.adapters.input.rest.assembler.ScheduleResponseAssembler;
 import com.treasury.infrastructure.adapters.input.rest.dto.TreasuryDtos.ScheduleRequest;
 import com.treasury.infrastructure.adapters.input.rest.dto.TreasuryDtos.ScheduleResponse;
 import com.treasury.infrastructure.adapters.input.rest.mapper.IPaymentScheduleRestMapper;
@@ -22,12 +23,13 @@ public class PaymentScheduleController {
     private final IPaymentScheduleQueryUseCase queries;
     private final IPaymentScheduleExecutionUseCase executions;
     private final IPaymentScheduleRestMapper mapper;
-    @PostMapping public ScheduleResponse create(@Valid@RequestBody ScheduleRequest r){return mapper.toResponse(commands.create(mapper.toCommand(r)));}
-    @PutMapping("/{id}")public ScheduleResponse update(@PathVariable Long id,@Valid@RequestBody ScheduleRequest r){return mapper.toResponse(commands.update(id,mapper.toCommand(r)));}
+    private final ScheduleResponseAssembler assembler;
+    @PostMapping public ScheduleResponse create(@Valid@RequestBody ScheduleRequest r){return assembler.toResponse(commands.create(mapper.toCommand(r)));}
+    @PutMapping("/{id}")public ScheduleResponse update(@PathVariable Long id,@Valid@RequestBody ScheduleRequest r){return assembler.toResponse(commands.update(id,mapper.toCommand(r)));}
     @DeleteMapping("/{id}")public void delete(@PathVariable Long id){commands.delete(id);}
-    @GetMapping("/{id}")public ScheduleResponse find(@PathVariable Long id){return mapper.toResponse(queries.find(id));}
-    @GetMapping public List<ScheduleResponse> list(@RequestParam String enterpriseId,@RequestParam(required=false)PaymentScheduleStatus status,@RequestParam(required=false)LocalDate from,@RequestParam(required=false)LocalDate to){return mapper.toResponseList(queries.list(new ScheduleFilter(enterpriseId,status,from,to)));}
-    @PostMapping("/{id}/cancel")public ScheduleResponse cancel(@PathVariable Long id){return mapper.toResponse(commands.cancel(id));}
-    @PostMapping("/{id}/execute")public ScheduleResponse execute(@PathVariable Long id){return mapper.toResponse(executions.execute(id));}
-    @PostMapping("/{id}/retry")public ScheduleResponse retry(@PathVariable Long id){return mapper.toResponse(executions.execute(id));}
+    @GetMapping("/{id}")public ScheduleResponse find(@PathVariable Long id){return assembler.toResponse(queries.find(id));}
+    @GetMapping public List<ScheduleResponse> list(@RequestParam String enterpriseId,@RequestParam(required=false)PaymentScheduleStatus status,@RequestParam(required=false)LocalDate from,@RequestParam(required=false)LocalDate to){return assembler.toResponseList(queries.list(new ScheduleFilter(enterpriseId,status,from,to)));}
+    @PostMapping("/{id}/cancel")public ScheduleResponse cancel(@PathVariable Long id){return assembler.toResponse(commands.cancel(id));}
+    @PostMapping("/{id}/execute")public ScheduleResponse execute(@PathVariable Long id){return assembler.toResponse(executions.execute(id));}
+    @PostMapping("/{id}/retry")public ScheduleResponse retry(@PathVariable Long id){return assembler.toResponse(executions.execute(id));}
 }

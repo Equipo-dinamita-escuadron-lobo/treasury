@@ -3,6 +3,7 @@ package com.treasury.infrastructure.adapters.input.transaction;
 import com.treasury.application.input.IPaymentVoucherCommandUseCase;
 import com.treasury.application.input.IPaymentVoucherQueryUseCase;
 import com.treasury.application.output.IExecutionContextPort;
+import com.treasury.application.output.IPayableWriteOffPersistencePort;
 import com.treasury.application.output.IPaymentVoucherCommandPersistencePort;
 import com.treasury.application.output.IPaymentVoucherQueryPersistencePort;
 import com.treasury.application.output.ISupplierInvoiceProviderPort;
@@ -10,6 +11,7 @@ import com.treasury.application.output.ITreasuryAuditPersistencePort;
 import com.treasury.application.output.ITreasuryEventPublisher;
 import com.treasury.application.output.IPaymentMethodProviderPort;
 import com.treasury.application.service.PaymentVoucherService;
+import com.treasury.application.service.SupplierInvoiceBalanceReconciliationService;
 import com.treasury.domain.model.PaymentVoucher;
 import com.treasury.domain.model.command.TreasuryCommands.AccountingResult;
 import com.treasury.domain.model.command.TreasuryCommands.PageResult;
@@ -27,8 +29,12 @@ public class TransactionalPaymentVoucherUseCase
             IPaymentVoucherQueryPersistencePort voucherQueries,
             ISupplierInvoiceProviderPort invoices, ITreasuryEventPublisher events,
             ITreasuryAuditPersistencePort audit, IExecutionContextPort context,
-            IPaymentMethodProviderPort paymentMethods) {
-        this.delegate = new PaymentVoucherService(voucherCommands, voucherQueries, invoices, events, audit, context, paymentMethods);
+            IPaymentMethodProviderPort paymentMethods,
+            IPayableWriteOffPersistencePort writeOffs) {
+        SupplierInvoiceBalanceReconciliationService reconciliation =
+                new SupplierInvoiceBalanceReconciliationService(invoices, voucherQueries, writeOffs);
+        this.delegate = new PaymentVoucherService(voucherCommands, voucherQueries, invoices, events, audit, context,
+                paymentMethods, reconciliation);
     }
 
     @Override @Transactional public PaymentVoucher create(Voucher command) { return delegate.create(command); }

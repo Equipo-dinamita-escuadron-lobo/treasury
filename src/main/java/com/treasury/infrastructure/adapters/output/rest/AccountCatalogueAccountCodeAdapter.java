@@ -1,6 +1,7 @@
 package com.treasury.infrastructure.adapters.output.rest;
 
 import com.treasury.application.output.IAccountCodeResolverPort;
+import com.treasury.domain.model.AccountCatalogueAccountSnapshot;
 import com.treasury.infrastructure.adapters.output.multitenancy.utils.TenantContext;
 import com.treasury.infrastructure.adapters.output.security.IJwtUtils;
 import java.util.Arrays;
@@ -25,6 +26,11 @@ public class AccountCatalogueAccountCodeAdapter implements IAccountCodeResolverP
 
     @Override
     public Optional<String> resolveCode(Long accountId, String enterpriseId) {
+        return resolveAccount(accountId, enterpriseId).map(AccountCatalogueAccountSnapshot::code);
+    }
+
+    @Override
+    public Optional<AccountCatalogueAccountSnapshot> resolveAccount(Long accountId, String enterpriseId) {
         if (accountId == null || enterpriseId == null || enterpriseId.isBlank()) {
             return Optional.empty();
         }
@@ -40,14 +46,14 @@ public class AccountCatalogueAccountCodeAdapter implements IAccountCodeResolverP
             }
             return Arrays.stream(items)
                     .filter(a -> accountId.equals(a.id()))
-                    .map(AccountItem::code)
-                    .filter(code -> code != null && !code.isBlank() && !code.equals(String.valueOf(accountId)))
-                    .findFirst();
+                    .findFirst()
+                    .map(a -> new AccountCatalogueAccountSnapshot(a.code(), a.description(), a.classification(),
+                            Boolean.TRUE.equals(a.status())));
         } catch (Exception ex) {
-            log.warn("No se pudo resolver código PUC para cuenta {}: {}", accountId, ex.getMessage());
+            log.warn("No se pudo resolver cuenta PUC {}: {}", accountId, ex.getMessage());
             return Optional.empty();
         }
     }
 
-    private record AccountItem(Long id, String code) {}
+    private record AccountItem(Long id, String code, String description, Integer classification, Boolean status) {}
 }

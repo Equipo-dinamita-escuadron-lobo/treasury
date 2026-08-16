@@ -59,6 +59,8 @@ public class PaymentVoucherResponseAssembler {
                 accountingEntryCode,
                 response.failureReason(),
                 response.voidReason(),
+                response.createdAt(),
+                response.updatedAt(),
                 response.version(),
                 response.details());
     }

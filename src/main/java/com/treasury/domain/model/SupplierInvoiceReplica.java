@@ -41,7 +41,14 @@ public class SupplierInvoiceReplica {
 
     public void release(BigDecimal amount) { reservedAmount = reservedAmount.subtract(amount); }
     public void confirmPayment(BigDecimal amount) { release(amount); pendingAmount = pendingAmount.subtract(amount); paidAmount = paidAmount.add(amount); }
-    public void reversePayment(BigDecimal amount) { paidAmount = paidAmount.subtract(amount); pendingAmount = pendingAmount.add(amount); }
+    public void reversePayment(BigDecimal amount) {
+        positive(amount);
+        if (paidAmount.compareTo(amount) < 0) {
+            conflict("No hay saldo pagado suficiente para revertir en " + reference);
+        }
+        paidAmount = paidAmount.subtract(amount);
+        pendingAmount = pendingAmount.add(amount);
+    }
     public void confirmWriteOff(BigDecimal amount) { release(amount); pendingAmount = pendingAmount.subtract(amount); }
     public void reverseWriteOff(BigDecimal amount) { pendingAmount = pendingAmount.add(amount); }
     public void changeDueDate(LocalDate date) { dueDate = date; dueDateOverridden = true; }

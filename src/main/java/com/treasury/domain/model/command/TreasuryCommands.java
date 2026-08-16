@@ -1,5 +1,6 @@
 package com.treasury.domain.model.command;
 
+import com.treasury.domain.model.PayableWriteOff;
 import com.treasury.domain.model.PaymentScheduleStatus;
 import com.treasury.domain.model.PaymentVoucher;
 import com.treasury.domain.model.PaymentVoucherStatus;
@@ -45,5 +46,6 @@ public final class TreasuryCommands {
                             BigDecimal days31to60, BigDecimal days61to90, BigDecimal days91Plus) {}
     public record SupplierStatement(Long supplierId, BigDecimal invoiced, BigDecimal paid,
                                     BigDecimal pending, List<SupplierInvoiceReplica> invoices,
-                                    List<PaymentVoucher> vouchers) {}
+                                    List<PaymentVoucher> vouchers, BigDecimal openingBalance,
+                                    BigDecimal writeOffTotal, List<PayableWriteOff> writeOffs) {}
 }
