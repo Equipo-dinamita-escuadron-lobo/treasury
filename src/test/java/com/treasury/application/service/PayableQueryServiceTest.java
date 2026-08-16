@@ -3,7 +3,9 @@ package com.treasury.application.service;
 import com.treasury.application.output.*;
 import com.treasury.domain.model.*;
 import com.treasury.domain.model.command.TreasuryCommands.AgingLine;
+import com.treasury.domain.model.command.TreasuryCommands.PageResult;
 import com.treasury.domain.model.command.TreasuryCommands.SupplierStatement;
+import com.treasury.domain.model.command.TreasuryCommands.VoucherFilter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import org.mockito.stubbing.Answer;
 
 @ExtendWith(MockitoExtension.class)
 class PayableQueryServiceTest {
@@ -238,6 +241,93 @@ class PayableQueryServiceTest {
 
         assertEquals(BigDecimal.ZERO, statement.writeOffTotal());
         assertTrue(statement.writeOffs().isEmpty());
+    }
+
+    @Test
+    void statementExcludesVoidedVouchersFromPaidButKeepsTraceHistory() {
+        LocalDate from = LocalDate.of(2026, 8, 1);
+        LocalDate to = LocalDate.of(2026, 8, 31);
+        Long supplierId = 78L;
+        String enterpriseId = "enterprise-a";
+
+        SupplierInvoiceReplica invoice = invoice(10L, supplierId, "FC-357", from.plusDays(2),
+                new BigDecimal("357000"), BigDecimal.ZERO, new BigDecimal("357000"));
+        invoice.setEnterpriseId(enterpriseId);
+        when(invoices.findForStatement(enterpriseId, supplierId, null, to, null, null)).thenReturn(List.of(invoice));
+
+        PaymentVoucherDetail voidedDetail = new PaymentVoucherDetail();
+        voidedDetail.setSupplierId(supplierId);
+        voidedDetail.setInvoiceId(10L);
+        voidedDetail.setAmountPaid(new BigDecimal("100000"));
+        PaymentVoucher voidedVoucher = new PaymentVoucher();
+        voidedVoucher.setId(55L);
+        voidedVoucher.setStatus(PaymentVoucherStatus.VOIDED);
+        voidedVoucher.setIssueDate(from.plusDays(5));
+        voidedVoucher.setUpdatedAt(Instant.parse("2026-08-12T15:00:00Z"));
+        voidedVoucher.setAccountingEntryId(88L);
+        voidedVoucher.setDetails(List.of(voidedDetail));
+
+        when(vouchers.search(any())).thenAnswer(voucherSearchAnswer(List.of(), List.of(voidedVoucher)));
+        when(writeOffs.findByEnterprise(enterpriseId)).thenReturn(List.of());
+
+        SupplierStatement statement = service.statement(enterpriseId, supplierId, from, to, null, null);
+
+        assertEquals(BigDecimal.ZERO, statement.paid());
+        assertEquals(new BigDecimal("357000"), statement.pending());
+        assertEquals(1, statement.vouchers().size());
+        assertEquals(PaymentVoucherStatus.VOIDED, statement.vouchers().get(0).getStatus());
+    }
+
+    @Test
+    void statementExcludesDraftDiscardedAndFailedVouchersFromTrace() {
+        LocalDate from = LocalDate.of(2026, 8, 1);
+        LocalDate to = LocalDate.of(2026, 8, 31);
+        Long supplierId = 78L;
+        String enterpriseId = "enterprise-a";
+
+        SupplierInvoiceReplica invoice = invoice(10L, supplierId, "FC-357", from.plusDays(2),
+                new BigDecimal("357000"), BigDecimal.ZERO, new BigDecimal("357000"));
+        when(invoices.findForStatement(enterpriseId, supplierId, null, to, null, null)).thenReturn(List.of(invoice));
+
+        PaymentVoucherDetail detail = new PaymentVoucherDetail();
+        detail.setSupplierId(supplierId);
+        detail.setInvoiceId(10L);
+        detail.setAmountPaid(new BigDecimal("100000"));
+
+        PaymentVoucher draft = new PaymentVoucher();
+        draft.setStatus(PaymentVoucherStatus.DRAFT);
+        draft.setIssueDate(from.plusDays(3));
+        draft.setDetails(List.of(detail));
+
+        PaymentVoucher discardedDraft = new PaymentVoucher();
+        discardedDraft.setStatus(PaymentVoucherStatus.VOIDED);
+        discardedDraft.setIssueDate(from.plusDays(4));
+        discardedDraft.setUpdatedAt(Instant.parse("2026-08-11T12:00:00Z"));
+        discardedDraft.setDetails(List.of(detail));
+
+        PaymentVoucher failed = new PaymentVoucher();
+        failed.setStatus(PaymentVoucherStatus.FAILED);
+        failed.setIssueDate(from.plusDays(5));
+        failed.setDetails(List.of(detail));
+
+        when(vouchers.search(any())).thenAnswer(voucherSearchAnswer(List.of(), List.of(draft, discardedDraft, failed)));
+        when(writeOffs.findByEnterprise(enterpriseId)).thenReturn(List.of());
+
+        SupplierStatement statement = service.statement(enterpriseId, supplierId, from, to, null, null);
+
+        assertEquals(BigDecimal.ZERO, statement.paid());
+        assertTrue(statement.vouchers().isEmpty());
+    }
+
+    private static Answer<PageResult<PaymentVoucher>> voucherSearchAnswer(
+            List<PaymentVoucher> posted, List<PaymentVoucher> voided) {
+        return invocation -> {
+            VoucherFilter filter = invocation.getArgument(0);
+            if (filter.status() == PaymentVoucherStatus.VOIDED) {
+                return new PageResult<>(voided, voided.size(), 1, 0, 10000);
+            }
+            return new PageResult<>(posted, posted.size(), 1, 0, 10000);
+        };
     }
 
     private static SupplierInvoiceReplica invoice(Long id, Long supplierId, String reference, LocalDate issueDate,
