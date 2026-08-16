@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -86,13 +87,25 @@ public class PayableQueryService implements IPayableCommandUseCase, IPayableQuer
         BigDecimal invoiced=sum(periodInvoices,SupplierInvoiceReplica::getOriginalAmount);
         BigDecimal closingBalance=sum(throughEnd,SupplierInvoiceReplica::getPendingAmount);
         Long invoiceId=periodInvoices.size()==1?periodInvoices.get(0).getId():null;
-        VoucherFilter filter=new VoucherFilter(enterpriseId,null,PaymentVoucherStatus.POSTED,from,to,supplierId,invoiceId,null,null,null,null,0,10000,"id,desc");
-        List<PaymentVoucher> voucherList=vouchers.search(filter).content();
-        BigDecimal periodPayments=voucherList.stream()
+        VoucherFilter postedFilter=new VoucherFilter(enterpriseId,null,PaymentVoucherStatus.POSTED,from,to,supplierId,invoiceId,null,null,null,null,0,10000,"id,desc");
+        List<PaymentVoucher> postedVoucherList=vouchers.search(postedFilter).content();
+        BigDecimal periodPayments=postedVoucherList.stream()
                 .flatMap(voucher->voucher.getDetails().stream())
                 .filter(detail->supplierId==null||supplierId.equals(detail.getSupplierId()))
                 .map(PaymentVoucherDetail::getAmountPaid)
                 .reduce(BigDecimal.ZERO,BigDecimal::add);
+        VoucherFilter voidedFilter=new VoucherFilter(enterpriseId,null,PaymentVoucherStatus.VOIDED,null,null,supplierId,invoiceId,null,null,null,null,0,10000,"id,desc");
+        List<PaymentVoucher> voidedTraceList=vouchers.search(voidedFilter).content().stream()
+                .filter(voucher->voucher.getStatus()==PaymentVoucherStatus.VOIDED)
+                .filter(this::isStatementTraceVoucher)
+                .filter(voucher->isVoucherTraceableInPeriod(voucher,from,to))
+                .toList();
+        List<PaymentVoucher> traceVoucherList=new ArrayList<>(postedVoucherList);
+        for(PaymentVoucher voided:voidedTraceList){
+            if(traceVoucherList.stream().noneMatch(voucher->voucher.getId().equals(voided.getId()))){
+                traceVoucherList.add(voided);
+            }
+        }
         List<PayableWriteOff> enterpriseWriteOffs=writeOffs.findByEnterprise(enterpriseId).stream()
                 .filter(writeOff->writeOff.getDetails().stream().anyMatch(detail->supplierId==null||supplierId.equals(detail.getSupplierId())))
                 .toList();
@@ -110,7 +123,7 @@ public class PayableQueryService implements IPayableCommandUseCase, IPayableQuer
                 .map(PayableWriteOffDetail::getAmount)
                 .reduce(BigDecimal.ZERO,BigDecimal::add);
         if(from!=null){
-            for(PaymentVoucher voucher:voucherList){
+            for(PaymentVoucher voucher:postedVoucherList){
                 for(PaymentVoucherDetail detail:voucher.getDetails()){
                     if(detail.getInvoiceId()!=null&&openingInvoiceIds.contains(detail.getInvoiceId())
                             &&(supplierId==null||supplierId.equals(detail.getSupplierId()))){
@@ -127,7 +140,7 @@ public class PayableQueryService implements IPayableCommandUseCase, IPayableQuer
                 }
             }
         }
-        return new SupplierStatement(supplierId,invoiced,periodPayments,closingBalance,periodInvoices,voucherList,openingBalance,writeOffTotal,traceWriteOffList);
+        return new SupplierStatement(supplierId,invoiced,periodPayments,closingBalance,periodInvoices,traceVoucherList,openingBalance,writeOffTotal,traceWriteOffList);
     }
     @Override public List<AgingLine> aging(String enterpriseId, LocalDate cutoff, Long supplierId, String accountCode, String document) {
         return pending(enterpriseId,supplierId).stream()
@@ -173,6 +186,36 @@ public class PayableQueryService implements IPayableCommandUseCase, IPayableQuer
         }
         if (writeOff.getStatus() == WriteOffStatus.VOIDED) {
             return inPeriod(writeOff.getCreatedAt(), from, to) || inPeriod(writeOff.getUpdatedAt(), from, to);
+        }
+        return false;
+    }
+    private boolean inIssuePeriod(LocalDate issueDate, LocalDate from, LocalDate to) {
+        if (issueDate == null) {
+            return false;
+        }
+        if (from != null && issueDate.isBefore(from)) {
+            return false;
+        }
+        if (to != null && issueDate.isAfter(to)) {
+            return false;
+        }
+        return true;
+    }
+    private boolean isStatementTraceVoucher(PaymentVoucher voucher) {
+        if (voucher.getStatus() == PaymentVoucherStatus.POSTED) {
+            return true;
+        }
+        if (voucher.getStatus() == PaymentVoucherStatus.VOIDED) {
+            return voucher.getAccountingEntryId() != null;
+        }
+        return false;
+    }
+    private boolean isVoucherTraceableInPeriod(PaymentVoucher voucher, LocalDate from, LocalDate to) {
+        if (voucher.getStatus() == PaymentVoucherStatus.POSTED) {
+            return inIssuePeriod(voucher.getIssueDate(), from, to);
+        }
+        if (voucher.getStatus() == PaymentVoucherStatus.VOIDED) {
+            return inIssuePeriod(voucher.getIssueDate(), from, to) || inPeriod(voucher.getUpdatedAt(), from, to);
         }
         return false;
     }
