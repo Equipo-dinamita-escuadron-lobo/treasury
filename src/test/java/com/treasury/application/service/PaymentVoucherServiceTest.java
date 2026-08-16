@@ -131,6 +131,71 @@ class PaymentVoucherServiceTest {
         assertThat(second).isSameAs(voucher);
         assertThat(invoice.getReservedAmount()).isEqualByComparingTo("20");
         verify(events, times(1)).enqueue(any());
+        verify(paymentMethods).validateForPayment(1L, null, "ent");
+    }
+
+    @Test void rejectsPostWhenPaymentMethodBecameInactive() {
+        SupplierInvoiceReplica invoice = invoice(1, 10, "F-1", "100");
+        PaymentVoucher voucher = voucher(invoice, "20");
+        when(voucherQueries.findByIdempotencyKey("key", "ent")).thenReturn(Optional.empty());
+        when(voucherQueries.find(5L, "ent")).thenReturn(Optional.of(voucher));
+        doThrow(new TreasuryException(TreasuryException.Type.BAD_REQUEST, "Metodo de pago inactivo o inexistente"))
+                .when(paymentMethods).validateForPayment(1L, null, "ent");
+        assertThatThrownBy(() -> service.post(5L, "ent", "key"))
+                .isInstanceOf(TreasuryException.class)
+                .hasMessageContaining("inactivo o inexistente");
+        assertThat(voucher.getStatus()).isEqualTo(PaymentVoucherStatus.DRAFT);
+        verify(invoices, never()).findLocked(anyLong(), anyString());
+        verify(voucherCommands, never()).save(any());
+        verify(events, never()).enqueue(any());
+    }
+
+    @Test void rejectsPostWhenAccountingAccountBecameInactive() {
+        SupplierInvoiceReplica invoice = invoice(1, 10, "F-1", "100");
+        PaymentVoucher voucher = voucher(invoice, "20");
+        when(voucherQueries.findByIdempotencyKey("key", "ent")).thenReturn(Optional.empty());
+        when(voucherQueries.find(5L, "ent")).thenReturn(Optional.of(voucher));
+        doThrow(new TreasuryException(TreasuryException.Type.BAD_REQUEST, "La cuenta contable del metodo de pago esta inactiva o no pertenece a la empresa"))
+                .when(paymentMethods).validateForPayment(1L, null, "ent");
+        assertThatThrownBy(() -> service.post(5L, "ent", "key"))
+                .isInstanceOf(TreasuryException.class)
+                .hasMessageContaining("cuenta contable del metodo de pago");
+        assertThat(voucher.getStatus()).isEqualTo(PaymentVoucherStatus.DRAFT);
+        verify(invoices, never()).findLocked(anyLong(), anyString());
+        verify(voucherCommands, never()).save(any());
+        verify(events, never()).enqueue(any());
+    }
+
+    @Test void rejectsPostWhenAccountingAccountNoLongerExists() {
+        SupplierInvoiceReplica invoice = invoice(1, 10, "F-1", "100");
+        PaymentVoucher voucher = voucher(invoice, "20");
+        when(voucherQueries.findByIdempotencyKey("key", "ent")).thenReturn(Optional.empty());
+        when(voucherQueries.find(5L, "ent")).thenReturn(Optional.of(voucher));
+        doThrow(new TreasuryException(TreasuryException.Type.BAD_REQUEST, "El metodo de pago no tiene una cuenta contable configurada"))
+                .when(paymentMethods).validateForPayment(1L, null, "ent");
+        assertThatThrownBy(() -> service.post(5L, "ent", "key"))
+                .isInstanceOf(TreasuryException.class)
+                .hasMessageContaining("cuenta contable configurada");
+        assertThat(voucher.getStatus()).isEqualTo(PaymentVoucherStatus.DRAFT);
+        verify(invoices, never()).findLocked(anyLong(), anyString());
+        verify(voucherCommands, never()).save(any());
+        verify(events, never()).enqueue(any());
+    }
+
+    @Test void rejectsPostWhenPaymentMethodBelongsToAnotherEnterprise() {
+        SupplierInvoiceReplica invoice = invoice(1, 10, "F-1", "100");
+        PaymentVoucher voucher = voucher(invoice, "20");
+        when(voucherQueries.findByIdempotencyKey("key", "ent")).thenReturn(Optional.empty());
+        when(voucherQueries.find(5L, "ent")).thenReturn(Optional.of(voucher));
+        doThrow(new TreasuryException(TreasuryException.Type.BAD_REQUEST, "Metodo de pago inactivo o inexistente"))
+                .when(paymentMethods).validateForPayment(1L, null, "ent");
+        assertThatThrownBy(() -> service.post(5L, "ent", "key"))
+                .isInstanceOf(TreasuryException.class)
+                .hasMessageContaining("inactivo o inexistente");
+        assertThat(voucher.getStatus()).isEqualTo(PaymentVoucherStatus.DRAFT);
+        verify(invoices, never()).findLocked(anyLong(), anyString());
+        verify(voucherCommands, never()).save(any());
+        verify(events, never()).enqueue(any());
     }
 
     @Test void acceptedAccountingResultAppliesReservationOnlyOnce() {

@@ -16,5 +16,7 @@ public class PaymentScheduleDetailEntity {
     @Column(name="supplier_id",nullable=false) private Long supplierId;
     @Column(name="invoice_id",nullable=false) private Long invoiceId;
     @Column(nullable=false,precision=19,scale=2) private BigDecimal amount;
+    @Column(nullable=false) private boolean canceled = false;
+    @Column(name="cancellation_reason",length=500) private String cancellationReason;
     @TenantId @Column(name="tenant_id",nullable=false,length=80) private String tenantId;
 }

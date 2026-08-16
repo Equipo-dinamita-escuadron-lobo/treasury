@@ -29,6 +29,9 @@ public class PaymentSchedule {
     private List<PaymentScheduleDetail> details = new ArrayList<>();
 
     public BigDecimal getTotal() { return details.stream().map(PaymentScheduleDetail::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add); }
+    public List<PaymentScheduleDetail> activeDetails() {
+        return details.stream().filter(detail -> !detail.isCanceled()).toList();
+    }
     public void ensureEditable() { if (status != PaymentScheduleStatus.SCHEDULED && status != PaymentScheduleStatus.FAILED) conflict("La programación no puede modificarse"); }
     public void cancel() { ensureEditable(); status = PaymentScheduleStatus.CANCELED; }
     public void start() { ensureEditable(); status = PaymentScheduleStatus.PROCESSING; failureReason = null; }

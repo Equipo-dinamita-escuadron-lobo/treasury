@@ -11,5 +11,7 @@ public class PaymentScheduleDetail {
     private Long supplierId;
     private Long invoiceId;
     private BigDecimal amount;
+    private boolean canceled;
+    private String cancellationReason;
     private String tenantId;
 }

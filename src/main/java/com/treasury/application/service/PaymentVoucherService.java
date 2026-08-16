@@ -20,18 +20,27 @@ public class PaymentVoucherService implements IPaymentVoucherCommandUseCase, IPa
     private final IExecutionContextPort context;
     private final IPaymentMethodProviderPort paymentMethods;
     private final SupplierInvoiceBalanceReconciliationService reconciliation;
+    private final PaymentScheduleBalanceGuard scheduleBalanceGuard;
 
     public PaymentVoucherService(IPaymentVoucherCommandPersistencePort voucherCommands,
             IPaymentVoucherQueryPersistencePort voucherQueries, ISupplierInvoiceProviderPort invoices,
             ITreasuryEventPublisher events, ITreasuryAuditPersistencePort audit, IExecutionContextPort context,
             IPaymentMethodProviderPort paymentMethods) {
-        this(voucherCommands, voucherQueries, invoices, events, audit, context, paymentMethods, null);
+        this(voucherCommands, voucherQueries, invoices, events, audit, context, paymentMethods, null, null);
     }
 
     public PaymentVoucherService(IPaymentVoucherCommandPersistencePort voucherCommands,
             IPaymentVoucherQueryPersistencePort voucherQueries, ISupplierInvoiceProviderPort invoices,
             ITreasuryEventPublisher events, ITreasuryAuditPersistencePort audit, IExecutionContextPort context,
             IPaymentMethodProviderPort paymentMethods, SupplierInvoiceBalanceReconciliationService reconciliation) {
+        this(voucherCommands, voucherQueries, invoices, events, audit, context, paymentMethods, reconciliation, null);
+    }
+
+    public PaymentVoucherService(IPaymentVoucherCommandPersistencePort voucherCommands,
+            IPaymentVoucherQueryPersistencePort voucherQueries, ISupplierInvoiceProviderPort invoices,
+            ITreasuryEventPublisher events, ITreasuryAuditPersistencePort audit, IExecutionContextPort context,
+            IPaymentMethodProviderPort paymentMethods, SupplierInvoiceBalanceReconciliationService reconciliation,
+            PaymentScheduleBalanceGuard scheduleBalanceGuard) {
         this.voucherCommands = voucherCommands;
         this.voucherQueries = voucherQueries;
         this.invoices = invoices;
@@ -40,6 +49,7 @@ public class PaymentVoucherService implements IPaymentVoucherCommandUseCase, IPa
         this.context = context;
         this.paymentMethods = paymentMethods;
         this.reconciliation = reconciliation;
+        this.scheduleBalanceGuard = scheduleBalanceGuard;
     }
 
     @Override
@@ -59,6 +69,7 @@ public class PaymentVoucherService implements IPaymentVoucherCommandUseCase, IPa
     }
 
     private void apply(PaymentVoucher voucher, Voucher command) {
+        assertBalanceChangeAllowed(command.enterpriseId(), command.details().stream().map(Detail::invoiceId).toList());
         validatePaymentMethod(command.paymentMethodId(), command.bankAccountId(), command.enterpriseId());
         voucher.setEnterpriseId(command.enterpriseId()); voucher.setIssueDate(command.issueDate());
         voucher.setPaymentMethodId(command.paymentMethodId()); voucher.setBankAccountId(command.bankAccountId());
@@ -89,6 +100,11 @@ public class PaymentVoucherService implements IPaymentVoucherCommandUseCase, IPa
         Optional<PaymentVoucher> prior = voucherQueries.findByIdempotencyKey(idempotencyKey, enterpriseId);
         if (prior.isPresent()) return prior.get();
         PaymentVoucher voucher = get(id, enterpriseId);
+        if (!isScheduleOwnedPayment(id)) {
+            assertBalanceChangeAllowed(enterpriseId, voucher.getDetails().stream()
+                    .map(PaymentVoucherDetail::getInvoiceId).distinct().toList());
+        }
+        validatePaymentMethod(voucher.getPaymentMethodId(), voucher.getBankAccountId(), enterpriseId);
         voucher.startPosting(idempotencyKey);
         for (PaymentVoucherDetail detail : voucher.getDetails()) {
             SupplierInvoiceReplica invoice = lockedInvoice(detail.getInvoiceId(), enterpriseId);
@@ -111,7 +127,10 @@ public class PaymentVoucherService implements IPaymentVoucherCommandUseCase, IPa
 
     @Override
     public PaymentVoucher voidVoucher(Long id, String enterpriseId, String reason) {
-        PaymentVoucher voucher = get(id, enterpriseId); voucher.voidWithReason(reason);
+        PaymentVoucher voucher = get(id, enterpriseId);
+        assertBalanceChangeAllowed(enterpriseId, voucher.getDetails().stream()
+                .map(PaymentVoucherDetail::getInvoiceId).distinct().toList());
+        voucher.voidWithReason(reason);
         PaymentVoucher saved = voucherCommands.save(voucher);
         enqueue(saved, "PAYMENT_VOUCHER_VOID_REQUESTED");
         return saved;
@@ -200,6 +219,16 @@ public class PaymentVoucherService implements IPaymentVoucherCommandUseCase, IPa
         if (reconciliation != null) {
             reconciliation.reconcile(invoiceId, enterpriseId);
         }
+    }
+
+    private void assertBalanceChangeAllowed(String enterpriseId, List<Long> invoiceIds) {
+        if (scheduleBalanceGuard != null) {
+            scheduleBalanceGuard.assertBalanceChangeAllowed(enterpriseId, invoiceIds);
+        }
+    }
+
+    private boolean isScheduleOwnedPayment(Long voucherId) {
+        return scheduleBalanceGuard != null && scheduleBalanceGuard.isScheduleOwnedVoucher(voucherId);
     }
 
     private TreasuryException notFound(String message) { return new TreasuryException(TreasuryException.Type.NOT_FOUND, message); }

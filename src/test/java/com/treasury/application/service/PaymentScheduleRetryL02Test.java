@@ -12,6 +12,7 @@ import com.treasury.application.output.ITimeProviderPort;
 import com.treasury.application.output.ITransactionRunnerPort;
 import com.treasury.application.output.ITreasuryAuditPersistencePort;
 import com.treasury.application.output.ITreasuryEventPublisher;
+import com.treasury.domain.exception.TreasuryException;
 import com.treasury.domain.model.PaymentMethodData;
 import com.treasury.domain.model.PaymentSchedule;
 import com.treasury.domain.model.PaymentScheduleDetail;
@@ -37,7 +38,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -89,6 +92,7 @@ class PaymentScheduleRetryL02Test {
             String key = invocation.getArgument(0);
             return key.equals(failedVoucher.getIdempotencyKey()) ? Optional.of(failedVoucher) : Optional.empty();
         });
+        when(invoices.findById(1L)).thenReturn(Optional.of(invoice));
         when(invoices.findLocked(1L, "ent")).thenReturn(Optional.of(invoice));
 
         PaymentSchedule result = scheduleService.execute(7L);
@@ -100,6 +104,48 @@ class PaymentScheduleRetryL02Test {
         verify(events, times(1)).enqueue(eventCaptor.capture());
         assertThat(eventCaptor.getValue().eventType()).isEqualTo("PAYMENT_VOUCHER_CREATED");
         assertThat(eventCaptor.getValue().aggregateId()).isEqualTo(10L);
+    }
+
+    @Test
+    void retryFailsWhenPaymentMethodBecameInactiveBeforePost() {
+        PaymentVoucher failedVoucher = failedVoucherLinkedToSchedule();
+        PaymentSchedule failedSchedule = failedSchedule(failedVoucher.getId());
+
+        when(schedules.findLocked(7L)).thenReturn(Optional.of(failedSchedule));
+        when(voucherQueries.find(10L, "ent")).thenReturn(Optional.of(failedVoucher));
+        when(voucherQueries.findByIdempotencyKey(anyString(), eq("ent"))).thenReturn(Optional.empty());
+        when(invoices.findById(1L)).thenReturn(Optional.of(invoiceAvailable()));
+        doThrow(new TreasuryException(TreasuryException.Type.BAD_REQUEST, "Metodo de pago inactivo o inexistente"))
+                .when(paymentMethods).validateForPayment(1L, null, "ent");
+
+        PaymentSchedule result = scheduleService.execute(7L);
+
+        assertThat(result.getStatus()).isEqualTo(PaymentScheduleStatus.FAILED);
+        assertThat(result.getFailureReason()).contains("inactivo");
+        assertThat(failedVoucher.getStatus()).isEqualTo(PaymentVoucherStatus.FAILED);
+        verify(events, never()).enqueue(any());
+        verify(invoices, never()).findLocked(anyLong(), anyString());
+    }
+
+    @Test
+    void retryFailsWhenAccountingAccountBecameInactiveBeforePost() {
+        PaymentVoucher failedVoucher = failedVoucherLinkedToSchedule();
+        PaymentSchedule failedSchedule = failedSchedule(failedVoucher.getId());
+
+        when(schedules.findLocked(7L)).thenReturn(Optional.of(failedSchedule));
+        when(voucherQueries.find(10L, "ent")).thenReturn(Optional.of(failedVoucher));
+        when(voucherQueries.findByIdempotencyKey(anyString(), eq("ent"))).thenReturn(Optional.empty());
+        when(invoices.findById(1L)).thenReturn(Optional.of(invoiceAvailable()));
+        doThrow(new TreasuryException(TreasuryException.Type.BAD_REQUEST, "La cuenta contable del metodo de pago esta inactiva o no pertenece a la empresa"))
+                .when(paymentMethods).validateForPayment(1L, null, "ent");
+
+        PaymentSchedule result = scheduleService.execute(7L);
+
+        assertThat(result.getStatus()).isEqualTo(PaymentScheduleStatus.FAILED);
+        assertThat(result.getFailureReason()).contains("cuenta contable del metodo de pago");
+        assertThat(failedVoucher.getStatus()).isEqualTo(PaymentVoucherStatus.FAILED);
+        verify(events, never()).enqueue(any());
+        verify(invoices, never()).findLocked(anyLong(), anyString());
     }
 
     private PaymentSchedule failedSchedule(Long voucherId) {
