@@ -93,12 +93,18 @@ public class PayableQueryService implements IPayableCommandUseCase, IPayableQuer
                 .filter(detail->supplierId==null||supplierId.equals(detail.getSupplierId()))
                 .map(PaymentVoucherDetail::getAmountPaid)
                 .reduce(BigDecimal.ZERO,BigDecimal::add);
-        List<PayableWriteOff> writeOffList=writeOffs.findByEnterprise(enterpriseId).stream()
-                .filter(writeOff->writeOff.getStatus()==WriteOffStatus.POSTED)
-                .filter(writeOff->inPeriod(writeOff.getCreatedAt(),from,to))
+        List<PayableWriteOff> enterpriseWriteOffs=writeOffs.findByEnterprise(enterpriseId).stream()
                 .filter(writeOff->writeOff.getDetails().stream().anyMatch(detail->supplierId==null||supplierId.equals(detail.getSupplierId())))
                 .toList();
-        BigDecimal writeOffTotal=writeOffList.stream()
+        List<PayableWriteOff> postedWriteOffList=enterpriseWriteOffs.stream()
+                .filter(writeOff->writeOff.getStatus()==WriteOffStatus.POSTED)
+                .filter(writeOff->inPeriod(writeOff.getCreatedAt(),from,to))
+                .toList();
+        List<PayableWriteOff> traceWriteOffList=enterpriseWriteOffs.stream()
+                .filter(this::isStatementTraceWriteOff)
+                .filter(writeOff->isWriteOffTraceableInPeriod(writeOff,from,to))
+                .toList();
+        BigDecimal writeOffTotal=postedWriteOffList.stream()
                 .flatMap(writeOff->writeOff.getDetails().stream())
                 .filter(detail->supplierId==null||supplierId.equals(detail.getSupplierId()))
                 .map(PayableWriteOffDetail::getAmount)
@@ -112,7 +118,7 @@ public class PayableQueryService implements IPayableCommandUseCase, IPayableQuer
                     }
                 }
             }
-            for(PayableWriteOff writeOff:writeOffList){
+            for(PayableWriteOff writeOff:postedWriteOffList){
                 for(PayableWriteOffDetail detail:writeOff.getDetails()){
                     if(detail.getInvoiceId()!=null&&openingInvoiceIds.contains(detail.getInvoiceId())
                             &&(supplierId==null||supplierId.equals(detail.getSupplierId()))){
@@ -121,7 +127,7 @@ public class PayableQueryService implements IPayableCommandUseCase, IPayableQuer
                 }
             }
         }
-        return new SupplierStatement(supplierId,invoiced,periodPayments,closingBalance,periodInvoices,voucherList,openingBalance,writeOffTotal,writeOffList);
+        return new SupplierStatement(supplierId,invoiced,periodPayments,closingBalance,periodInvoices,voucherList,openingBalance,writeOffTotal,traceWriteOffList);
     }
     @Override public List<AgingLine> aging(String enterpriseId, LocalDate cutoff, Long supplierId, String accountCode, String document) {
         return pending(enterpriseId,supplierId).stream()
@@ -151,6 +157,18 @@ public class PayableQueryService implements IPayableCommandUseCase, IPayableQuer
         if(from!=null&&date.isBefore(from))return false;
         if(to!=null&&date.isAfter(to))return false;
         return true;
+    }
+    private boolean isStatementTraceWriteOff(PayableWriteOff writeOff) {
+        return writeOff.getStatus() == WriteOffStatus.POSTED || writeOff.getStatus() == WriteOffStatus.VOIDED;
+    }
+    private boolean isWriteOffTraceableInPeriod(PayableWriteOff writeOff, LocalDate from, LocalDate to) {
+        if (writeOff.getStatus() == WriteOffStatus.POSTED) {
+            return inPeriod(writeOff.getCreatedAt(), from, to);
+        }
+        if (writeOff.getStatus() == WriteOffStatus.VOIDED) {
+            return inPeriod(writeOff.getCreatedAt(), from, to) || inPeriod(writeOff.getUpdatedAt(), from, to);
+        }
+        return false;
     }
     private BigDecimal sum(List<SupplierInvoiceReplica> values,java.util.function.Function<SupplierInvoiceReplica,BigDecimal> mapper){return values.stream().map(mapper).reduce(BigDecimal.ZERO,BigDecimal::add);}
     private SupplierInvoiceReplica locked(Long id,String enterpriseId){return invoices.findLocked(id,enterpriseId).orElseThrow(()->new TreasuryException(TreasuryException.Type.NOT_FOUND,"Obligación no encontrada"));}
