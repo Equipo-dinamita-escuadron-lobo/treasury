@@ -163,6 +163,39 @@ class PayableQueryServiceTest {
                 statement.pending());
     }
 
+    @Test
+    void statementExcludesVoidedWriteOffsFromTotalsButKeepsTraceHistory() {
+        LocalDate from = LocalDate.of(2026, 8, 1);
+        LocalDate to = LocalDate.of(2026, 8, 31);
+        Long supplierId = 78L;
+        String enterpriseId = "enterprise-a";
+
+        SupplierInvoiceReplica invoice = invoice(10L, supplierId, "FC-357", from.plusDays(2),
+                new BigDecimal("357000"), BigDecimal.ZERO, new BigDecimal("357000"));
+        invoice.setEnterpriseId(enterpriseId);
+        when(invoices.findForStatement(enterpriseId, supplierId, null, to, null, null)).thenReturn(List.of(invoice));
+        when(vouchers.search(any())).thenReturn(new com.treasury.domain.model.command.TreasuryCommands.PageResult<>(
+                List.of(), 0, 0, 0, 10000));
+
+        PayableWriteOffDetail writeOffDetail = new PayableWriteOffDetail();
+        writeOffDetail.setSupplierId(supplierId);
+        writeOffDetail.setInvoiceId(10L);
+        writeOffDetail.setAmount(new BigDecimal("100000"));
+        PayableWriteOff voidedWriteOff = new PayableWriteOff();
+        voidedWriteOff.setStatus(WriteOffStatus.VOIDED);
+        voidedWriteOff.setCreatedAt(Instant.parse("2026-08-10T12:00:00Z"));
+        voidedWriteOff.setUpdatedAt(Instant.parse("2026-08-12T15:00:00Z"));
+        voidedWriteOff.setDetails(List.of(writeOffDetail));
+        when(writeOffs.findByEnterprise(enterpriseId)).thenReturn(List.of(voidedWriteOff));
+
+        SupplierStatement statement = service.statement(enterpriseId, supplierId, from, to, null, null);
+
+        assertEquals(BigDecimal.ZERO, statement.writeOffTotal());
+        assertEquals(new BigDecimal("357000"), statement.pending());
+        assertEquals(1, statement.writeOffs().size());
+        assertEquals(WriteOffStatus.VOIDED, statement.writeOffs().get(0).getStatus());
+    }
+
     private static SupplierInvoiceReplica invoice(Long id, Long supplierId, String reference, LocalDate issueDate,
             BigDecimal original, BigDecimal paid, BigDecimal pending) {
         SupplierInvoiceReplica invoice = new SupplierInvoiceReplica();
