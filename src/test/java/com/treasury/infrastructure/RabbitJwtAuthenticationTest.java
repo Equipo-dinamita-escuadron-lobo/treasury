@@ -1,6 +1,7 @@
 package com.treasury.infrastructure;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -56,15 +57,38 @@ class RabbitJwtAuthenticationTest {
     }
 
     @Test
-    void proceedsWithoutTenantWhenJwtHeaderIsMissing() throws Throwable {
+    void rejectsMessageWhenJwtHeaderIsMissing() {
         MessageProperties properties = new MessageProperties();
         properties.setHeader("x-tenant-id", "tenant-a");
         ProceedingJoinPoint joinPoint = joinPoint(new Message(new byte[0], properties), envelope("tenant-a"));
 
-        aspect.setTenantContext(joinPoint);
+        assertThatThrownBy(() -> aspect.setTenantContext(joinPoint))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("JWT");
 
-        verify(joinPoint).proceed();
         assertThat(TenantContext.getTenantId()).isNull();
+    }
+
+    @Test
+    void rejectsEnvelopeTenantDifferentFromAuthenticatedTenant() {
+        Message message = message("signed-user", "tenant-a");
+        when(decoder.extractTenantId("signed-user")).thenReturn("tenant-a");
+        ProceedingJoinPoint joinPoint = joinPoint(message, envelope("tenant-b", "tenant-a"));
+
+        assertThatThrownBy(() -> aspect.setTenantContext(joinPoint))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("envelope.tenantId");
+    }
+
+    @Test
+    void rejectsPayloadTenantDifferentFromAuthenticatedTenant() {
+        Message message = message("signed-user", "tenant-a");
+        when(decoder.extractTenantId("signed-user")).thenReturn("tenant-a");
+        ProceedingJoinPoint joinPoint = joinPoint(message, envelope("tenant-a", "tenant-b"));
+
+        assertThatThrownBy(() -> aspect.setTenantContext(joinPoint))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("payload.tenantId");
     }
 
     private ProceedingJoinPoint joinPoint(Message message, PurchaseInvoiceEnvelope envelope) {
@@ -84,10 +108,14 @@ class RabbitJwtAuthenticationTest {
     }
 
     private PurchaseInvoiceEnvelope envelope(String tenant) {
+        return envelope(tenant, tenant);
+    }
+
+    private PurchaseInvoiceEnvelope envelope(String envelopeTenant, String payloadTenant) {
         PurchaseInvoiceEvent payload = new PurchaseInvoiceEvent(1L, "FC-1", "ent", 2L,
                 BigDecimal.TEN, BigDecimal.ZERO, BigDecimal.TEN, LocalDate.now(), LocalDate.now(),
-                3L, "2205", true, tenant);
+                3L, "2205", true, payloadTenant);
         return new PurchaseInvoiceEnvelope("event", "PURCHASE_INVOICE_CREATED", 1, Instant.now(),
-                tenant, "ent", "correlation", new SourceDocument("PURCHASE_INVOICE", 1L), payload);
+                envelopeTenant, "ent", "correlation", new SourceDocument("PURCHASE_INVOICE", 1L), payload);
     }
 }

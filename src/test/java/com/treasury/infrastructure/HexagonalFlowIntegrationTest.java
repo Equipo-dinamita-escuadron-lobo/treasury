@@ -59,4 +59,32 @@ class HexagonalFlowIntegrationTest {
         assertThat(posted.getStatus()).isEqualTo(PaymentVoucherStatus.POSTED);assertThat(posted.getAccountingEntryId()).isEqualTo(9901L);
         assertThat(paid.getPendingAmount()).isEqualByComparingTo("70.00");assertThat(paid.getReservedAmount()).isZero();
     }
+
+    @Test void freshPurchaseBalancesFlowThroughJpaAndPendingQueryWithoutDuplicates(){
+        synchronization.synchronize(purchase("fresh-event-1", 7101L, "100000", "0", "100000"));
+        synchronization.synchronize(purchase("fresh-event-2", 7102L, "100000", "40000", "60000"));
+        synchronization.synchronize(purchase("fresh-event-3", 7103L, "100000", "100000", "0"));
+
+        // El mismo evento no vuelve a procesarse.
+        synchronization.synchronize(purchase("fresh-event-1", 7101L, "100000", "0", "100000"));
+        // Un evento nuevo de la misma factura actualiza la réplica existente.
+        synchronization.synchronize(purchase("fresh-event-4", 7102L, "100000", "40000", "60000"));
+
+        var pending = payables.pending("enterprise-fresh", 777L);
+        assertThat(pending).hasSize(2);
+        assertThat(pending).extracting(value -> value.getSourceInvoiceId())
+                .containsExactlyInAnyOrder(7101L, 7102L);
+        assertThat(pending.stream().filter(value -> value.getSourceInvoiceId().equals(7101L))
+                .findFirst().orElseThrow().getPendingAmount()).isEqualByComparingTo("100000");
+        assertThat(pending.stream().filter(value -> value.getSourceInvoiceId().equals(7102L))
+                .findFirst().orElseThrow().getPendingAmount()).isEqualByComparingTo("60000");
+    }
+
+    private PurchaseInvoiceEvent purchase(String eventId, Long sourceId, String original,
+            String paid, String pending) {
+        return new PurchaseInvoiceEvent(eventId, "PURCHASE_INVOICE_CREATED", sourceId,
+                "FC-" + sourceId, "enterprise-fresh", 777L, new BigDecimal(original),
+                new BigDecimal(paid), new BigDecimal(pending), LocalDate.now(),
+                LocalDate.now().plusDays(30), 2205L, "2205", true, tenant);
+    }
 }
