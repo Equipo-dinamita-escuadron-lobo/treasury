@@ -9,6 +9,7 @@ import com.treasury.domain.exception.TreasuryException;
 import com.treasury.domain.model.PayableWriteOff;
 import com.treasury.domain.model.PayableWriteOffDetail;
 import com.treasury.domain.model.SupplierInvoiceReplica;
+import com.treasury.domain.model.TreasuryEvent;
 import com.treasury.domain.model.WriteOffStatus;
 import com.treasury.domain.model.command.TreasuryCommands.AccountingResult;
 import com.treasury.domain.model.command.TreasuryCommands.Detail;
@@ -205,6 +206,28 @@ class PayableWriteOffServiceTest {
         assertThat(result.getStatus()).isEqualTo(WriteOffStatus.POSTING);
         assertThat(invoice.getReservedAmount()).isEqualByComparingTo("200");
         verify(events).enqueue(any());
+    }
+
+    @Test
+    void confirmRefreshesPayableAccountAndKeepsConfiguredCounterpartInEvent() {
+        SupplierInvoiceReplica draftInvoice = invoice(11L, 7L, "500", "0", 11L, "old-code");
+        PayableWriteOff writeOff = draftWriteOff(draftInvoice, bd("100"));
+        writeOff.setCounterpartAccountId(88L);
+        writeOff.setCounterpartAccountCode("429501");
+        SupplierInvoiceReplica synchronizedInvoice = invoice(11L, 7L, "500", "0", 77L, "22050501");
+        when(writeOffs.find(9L)).thenReturn(Optional.of(writeOff));
+        when(invoices.findLocked(11L, "ent")).thenReturn(Optional.of(synchronizedInvoice));
+
+        service.confirm(9L);
+
+        PayableWriteOffDetail detail = writeOff.getDetails().get(0);
+        assertThat(detail.getPayableAccountId()).isEqualTo(77L);
+        assertThat(detail.getPayableAccountCode()).isEqualTo("22050501");
+        ArgumentCaptor<TreasuryEvent> event = ArgumentCaptor.forClass(TreasuryEvent.class);
+        verify(events).enqueue(event.capture());
+        PayableWriteOff payload = (PayableWriteOff) event.getValue().payload();
+        assertThat(payload.getCounterpartAccountId()).isEqualTo(88L);
+        assertThat(payload.getDetails().get(0).getPayableAccountId()).isEqualTo(77L);
     }
 
     @Test
