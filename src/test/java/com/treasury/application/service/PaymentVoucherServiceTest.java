@@ -134,6 +134,26 @@ class PaymentVoucherServiceTest {
         verify(paymentMethods).validateForPayment(1L, null, "ent");
     }
 
+    @Test void postingRefreshesPayableAccountFromSynchronizedObligation() {
+        SupplierInvoiceReplica draftInvoice = invoice(1, 10, "F-1", "100");
+        PaymentVoucher voucher = voucher(draftInvoice, "100");
+        SupplierInvoiceReplica synchronizedInvoice = invoice(1, 10, "F-1", "100");
+        synchronizedInvoice.setPayableAccountId(77L);
+        synchronizedInvoice.setPayableAccountCode("22050501");
+        when(voucherQueries.findByIdempotencyKey("key", "ent")).thenReturn(Optional.empty());
+        when(voucherQueries.find(5L, "ent")).thenReturn(Optional.of(voucher));
+        when(invoices.findLocked(1L, "ent")).thenReturn(Optional.of(synchronizedInvoice));
+
+        service.post(5L, "ent", "key");
+
+        assertThat(voucher.getDetails().get(0).getPayableAccountId()).isEqualTo(77L);
+        assertThat(voucher.getDetails().get(0).getPayableAccountCode()).isEqualTo("22050501");
+        ArgumentCaptor<TreasuryEvent> event = ArgumentCaptor.forClass(TreasuryEvent.class);
+        verify(events).enqueue(event.capture());
+        PaymentVoucher payload = (PaymentVoucher) event.getValue().payload();
+        assertThat(payload.getDetails().get(0).getPayableAccountId()).isEqualTo(77L);
+    }
+
     @Test void rejectsPostWhenPaymentMethodBecameInactive() {
         SupplierInvoiceReplica invoice = invoice(1, 10, "F-1", "100");
         PaymentVoucher voucher = voucher(invoice, "20");
