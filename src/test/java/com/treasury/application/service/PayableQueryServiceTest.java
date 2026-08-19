@@ -319,6 +319,61 @@ class PayableQueryServiceTest {
         assertTrue(statement.vouchers().isEmpty());
     }
 
+    @Test
+    void activeDocumentFilterExcludesVoidedVoucherAndWriteOffHistory() {
+        LocalDate from = LocalDate.of(2026, 8, 1);
+        LocalDate to = LocalDate.of(2026, 8, 31);
+        Long supplierId = 78L;
+        String enterpriseId = "enterprise-a";
+        SupplierInvoiceReplica activeInvoice = invoice(10L, supplierId, "FC-ACTIVE", from.plusDays(1),
+                new BigDecimal("100000"), BigDecimal.ZERO, new BigDecimal("100000"));
+        when(invoices.findForStatement(enterpriseId, supplierId, null, to, null, true))
+                .thenReturn(List.of(activeInvoice));
+
+        PaymentVoucher postedVoucher = voucher(1L, PaymentVoucherStatus.POSTED, supplierId, 10L, "25000", from.plusDays(2));
+        when(vouchers.search(any())).thenAnswer(voucherSearchAnswer(List.of(postedVoucher), List.of()));
+        PayableWriteOff postedWriteOff = writeOff(WriteOffStatus.POSTED, supplierId, 10L, "10000");
+        when(writeOffs.findByEnterprise(enterpriseId)).thenReturn(List.of(postedWriteOff,
+                writeOff(WriteOffStatus.VOIDED, supplierId, 10L, "5000")));
+
+        SupplierStatement statement = service.statement(enterpriseId, supplierId, from, to, null, true);
+
+        assertEquals(1, statement.vouchers().size());
+        assertEquals(PaymentVoucherStatus.POSTED, statement.vouchers().get(0).getStatus());
+        assertEquals(1, statement.writeOffs().size());
+        assertEquals(WriteOffStatus.POSTED, statement.writeOffs().get(0).getStatus());
+    }
+
+    @Test
+    void voidedDocumentFilterExcludesPostedVoucherAndWriteOffs() {
+        LocalDate from = LocalDate.of(2026, 8, 1);
+        LocalDate to = LocalDate.of(2026, 8, 31);
+        Long supplierId = 78L;
+        String enterpriseId = "enterprise-a";
+        SupplierInvoiceReplica voidedInvoice = invoice(10L, supplierId, "FC-VOID", from.plusDays(1),
+                new BigDecimal("100000"), BigDecimal.ZERO, new BigDecimal("100000"));
+        voidedInvoice.setActive(false);
+        when(invoices.findForStatement(enterpriseId, supplierId, null, to, null, false))
+                .thenReturn(List.of(voidedInvoice));
+
+        PaymentVoucher voidedVoucher = voucher(2L, PaymentVoucherStatus.VOIDED, supplierId, 10L, "25000", from.plusDays(2));
+        voidedVoucher.setAccountingEntryId(88L);
+        when(vouchers.search(any())).thenAnswer(voucherSearchAnswer(List.of(), List.of(voidedVoucher)));
+        PayableWriteOff voidedWriteOff = writeOff(WriteOffStatus.VOIDED, supplierId, 10L, "10000");
+        voidedWriteOff.setAccountingEntryId(99L);
+        when(writeOffs.findByEnterprise(enterpriseId)).thenReturn(List.of(
+                writeOff(WriteOffStatus.POSTED, supplierId, 10L, "5000"), voidedWriteOff));
+
+        SupplierStatement statement = service.statement(enterpriseId, supplierId, from, to, null, false);
+
+        assertEquals(BigDecimal.ZERO, statement.paid());
+        assertEquals(BigDecimal.ZERO, statement.writeOffTotal());
+        assertEquals(1, statement.vouchers().size());
+        assertEquals(PaymentVoucherStatus.VOIDED, statement.vouchers().get(0).getStatus());
+        assertEquals(1, statement.writeOffs().size());
+        assertEquals(WriteOffStatus.VOIDED, statement.writeOffs().get(0).getStatus());
+    }
+
     private static Answer<PageResult<PaymentVoucher>> voucherSearchAnswer(
             List<PaymentVoucher> posted, List<PaymentVoucher> voided) {
         return invocation -> {
@@ -328,6 +383,34 @@ class PayableQueryServiceTest {
             }
             return new PageResult<>(posted, posted.size(), 1, 0, 10000);
         };
+    }
+
+    private static PaymentVoucher voucher(Long id, PaymentVoucherStatus status, Long supplierId,
+            Long invoiceId, String amount, LocalDate issueDate) {
+        PaymentVoucherDetail detail = new PaymentVoucherDetail();
+        detail.setSupplierId(supplierId);
+        detail.setInvoiceId(invoiceId);
+        detail.setAmountPaid(new BigDecimal(amount));
+        PaymentVoucher voucher = new PaymentVoucher();
+        voucher.setId(id);
+        voucher.setStatus(status);
+        voucher.setIssueDate(issueDate);
+        voucher.setUpdatedAt(issueDate.atStartOfDay(java.time.ZoneId.systemDefault()).toInstant());
+        voucher.setDetails(List.of(detail));
+        return voucher;
+    }
+
+    private static PayableWriteOff writeOff(WriteOffStatus status, Long supplierId, Long invoiceId, String amount) {
+        PayableWriteOffDetail detail = new PayableWriteOffDetail();
+        detail.setSupplierId(supplierId);
+        detail.setInvoiceId(invoiceId);
+        detail.setAmount(new BigDecimal(amount));
+        PayableWriteOff writeOff = new PayableWriteOff();
+        writeOff.setStatus(status);
+        writeOff.setCreatedAt(Instant.parse("2026-08-10T12:00:00Z"));
+        writeOff.setUpdatedAt(Instant.parse("2026-08-12T12:00:00Z"));
+        writeOff.setDetails(List.of(detail));
+        return writeOff;
     }
 
     private static SupplierInvoiceReplica invoice(Long id, Long supplierId, String reference, LocalDate issueDate,

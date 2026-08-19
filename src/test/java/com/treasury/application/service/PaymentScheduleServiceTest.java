@@ -27,6 +27,7 @@ import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -107,9 +108,55 @@ class PaymentScheduleServiceTest {
         verify(schedules).save(any());
     }
 
+    @Test void acceptsAmountEqualToAvailableBalance() {
+        LocalDate today = LocalDate.of(2026, 8, 16);
+        SupplierInvoiceReplica invoice = invoice();
+        invoice.setPendingAmount(new BigDecimal("100000"));
+        when(time.today()).thenReturn(today);
+        when(context.tenantId()).thenReturn("tenant");
+        when(invoices.findById(11L)).thenReturn(Optional.of(invoice));
+        when(schedules.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        PaymentSchedule result = service.create(scheduleCommand(today.plusDays(1), "100000"));
+
+        assertThat(result.getDetails()).singleElement()
+                .extracting(detail -> detail.getAmount())
+                .isEqualTo(new BigDecimal("100000"));
+    }
+
+    @Test void rejectsAmountGreaterThanAvailableBalance() {
+        LocalDate today = LocalDate.of(2026, 8, 16);
+        SupplierInvoiceReplica invoice = invoice();
+        invoice.setPendingAmount(new BigDecimal("100000"));
+        invoice.setReference("FC-100");
+        when(time.today()).thenReturn(today);
+        when(invoices.findById(11L)).thenReturn(Optional.of(invoice));
+
+        assertThatThrownBy(() -> service.create(scheduleCommand(today.plusDays(1), "100001")))
+                .isInstanceOf(TreasuryException.class)
+                .hasMessageContaining("supera el saldo disponible de FC-100");
+
+        verify(schedules, never()).save(any());
+    }
+
+    @Test void rejectsZeroAmount() {
+        LocalDate today = LocalDate.of(2026, 8, 16);
+        when(time.today()).thenReturn(today);
+
+        assertThatThrownBy(() -> service.create(scheduleCommand(today.plusDays(1), "0")))
+                .isInstanceOf(TreasuryException.class)
+                .hasMessageContaining("mayor que cero");
+
+        verify(schedules, never()).save(any());
+    }
+
     private static Schedule scheduleCommand(LocalDate executionDate) {
+        return scheduleCommand(executionDate, "100");
+    }
+
+    private static Schedule scheduleCommand(LocalDate executionDate, String amount) {
         return new Schedule("ent", executionDate, 1L, null, "obs",
-                List.of(new Detail(10L, 11L, new BigDecimal("100"))));
+                List.of(new Detail(10L, 11L, new BigDecimal(amount))));
     }
 
     private static SupplierInvoiceReplica invoice() {

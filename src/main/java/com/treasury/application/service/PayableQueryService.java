@@ -73,6 +73,8 @@ public class PayableQueryService implements IPayableCommandUseCase, IPayableQuer
         return reconciliation.reconcileSupplier(enterpriseId, supplierId);
     }
     @Override public SupplierStatement statement(String enterpriseId, Long supplierId, LocalDate from, LocalDate to, String invoiceReference, Boolean active) {
+        boolean includeActiveDocuments=active==null||active;
+        boolean includeVoidedDocuments=active==null||!active;
         List<SupplierInvoiceReplica> throughEnd=invoices.findForStatement(enterpriseId,supplierId,null,to,invoiceReference,active);
         List<SupplierInvoiceReplica> periodInvoices=throughEnd.stream()
                 .filter(invoice->from==null||!invoice.getIssueDate().isBefore(from))
@@ -88,14 +90,18 @@ public class PayableQueryService implements IPayableCommandUseCase, IPayableQuer
         BigDecimal closingBalance=sum(throughEnd,SupplierInvoiceReplica::getPendingAmount);
         Long invoiceId=periodInvoices.size()==1?periodInvoices.get(0).getId():null;
         VoucherFilter postedFilter=new VoucherFilter(enterpriseId,null,PaymentVoucherStatus.POSTED,from,to,supplierId,invoiceId,null,null,null,null,0,10000,"id,desc");
-        List<PaymentVoucher> postedVoucherList=vouchers.search(postedFilter).content();
+        List<PaymentVoucher> postedVoucherList=includeActiveDocuments
+                ? vouchers.search(postedFilter).content()
+                : List.of();
         BigDecimal periodPayments=postedVoucherList.stream()
                 .flatMap(voucher->voucher.getDetails().stream())
                 .filter(detail->supplierId==null||supplierId.equals(detail.getSupplierId()))
                 .map(PaymentVoucherDetail::getAmountPaid)
                 .reduce(BigDecimal.ZERO,BigDecimal::add);
         VoucherFilter voidedFilter=new VoucherFilter(enterpriseId,null,PaymentVoucherStatus.VOIDED,null,null,supplierId,invoiceId,null,null,null,null,0,10000,"id,desc");
-        List<PaymentVoucher> voidedTraceList=vouchers.search(voidedFilter).content().stream()
+        List<PaymentVoucher> voidedTraceList=(includeVoidedDocuments
+                ? vouchers.search(voidedFilter).content()
+                : List.<PaymentVoucher>of()).stream()
                 .filter(voucher->voucher.getStatus()==PaymentVoucherStatus.VOIDED)
                 .filter(this::isStatementTraceVoucher)
                 .filter(voucher->isVoucherTraceableInPeriod(voucher,from,to))
@@ -109,12 +115,17 @@ public class PayableQueryService implements IPayableCommandUseCase, IPayableQuer
         List<PayableWriteOff> enterpriseWriteOffs=writeOffs.findByEnterprise(enterpriseId).stream()
                 .filter(writeOff->writeOff.getDetails().stream().anyMatch(detail->supplierId==null||supplierId.equals(detail.getSupplierId())))
                 .toList();
-        List<PayableWriteOff> postedWriteOffList=enterpriseWriteOffs.stream()
+        List<PayableWriteOff> postedWriteOffList=(includeActiveDocuments
+                ? enterpriseWriteOffs
+                : List.<PayableWriteOff>of()).stream()
                 .filter(writeOff->writeOff.getStatus()==WriteOffStatus.POSTED)
                 .filter(writeOff->inPeriod(writeOff.getCreatedAt(),from,to))
                 .toList();
         List<PayableWriteOff> traceWriteOffList=enterpriseWriteOffs.stream()
                 .filter(this::isStatementTraceWriteOff)
+                .filter(writeOff->active==null
+                        ||(active&&writeOff.getStatus()==WriteOffStatus.POSTED)
+                        ||(!active&&writeOff.getStatus()==WriteOffStatus.VOIDED))
                 .filter(writeOff->isWriteOffTraceableInPeriod(writeOff,from,to))
                 .toList();
         BigDecimal writeOffTotal=postedWriteOffList.stream()
