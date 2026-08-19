@@ -1,6 +1,7 @@
 package com.treasury.infrastructure.adapters.output.messageBroker.aspect;
 
 import com.rabbitmq.client.LongString;
+import com.treasury.infrastructure.adapters.input.rabbit.TreasuryRabbitDtos.TenantEnvelope;
 import com.treasury.infrastructure.adapters.output.messageBroker.support.RabbitJwtPayloadDecoder;
 import com.treasury.infrastructure.adapters.output.messageBroker.support.JwtTokenService;
 import com.treasury.infrastructure.adapters.output.multitenancy.utils.TenantContext;
@@ -37,16 +38,15 @@ public class JWTContextRabbitMqAspect {
         Object tokenObject = message.getMessageProperties().getHeaders().get(JWT_TOKEN_HEADER);
         String jwtToken = extractTokenFromObject(tokenObject);
         if (jwtToken == null || jwtToken.isBlank()) {
-            logger.error("Mensaje recibido sin la cabecera '{}'. Se procesará sin contexto de tenant.", JWT_TOKEN_HEADER);
-            return joinPoint.proceed();
+            throw new IllegalArgumentException("Mensaje Rabbit sin JWT autenticado para resolver el tenant");
         }
 
         try {
             String tenantId = jwtDecoder.extractTenantId(jwtToken);
             if (tenantId == null || tenantId.isBlank()) {
-                logger.error("No se pudo extraer el tenant ID del token JWT. Se procesará sin contexto de tenant.");
-                return joinPoint.proceed();
+                throw new IllegalArgumentException("No se pudo extraer el tenant autenticado del JWT Rabbit");
             }
+            validateTenantConsistency(joinPoint.getArgs(), tenantId);
             jwtTokenService.setRabbitJwtToken(jwtToken);
             jwtTokenService.setRabbitTenantId(tenantId);
             TenantContext.setTenantId(tenantId);
@@ -76,5 +76,21 @@ public class JWTContextRabbitMqAspect {
             return text;
         }
         return null;
+    }
+
+    private void validateTenantConsistency(Object[] args, String authenticatedTenant) {
+        for (Object arg : args) {
+            if (arg instanceof TenantEnvelope envelope) {
+                requireMatchingTenant("envelope.tenantId", envelope.tenantId(), authenticatedTenant);
+                requireMatchingTenant("payload.tenantId", envelope.payloadTenantId(), authenticatedTenant);
+            }
+        }
+    }
+
+    private void requireMatchingTenant(String source, String declaredTenant, String authenticatedTenant) {
+        if (declaredTenant != null && !declaredTenant.isBlank()
+                && !authenticatedTenant.equals(declaredTenant)) {
+            throw new IllegalArgumentException(source + " no coincide con el tenant autenticado");
+        }
     }
 }

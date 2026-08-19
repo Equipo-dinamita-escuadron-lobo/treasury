@@ -8,6 +8,7 @@ import com.treasury.domain.model.command.TreasuryCommands;
 import com.treasury.infrastructure.adapters.config.RabbitConfig;
 import com.treasury.infrastructure.adapters.input.rabbit.TreasuryRabbitDtos.AccountingResultEnvelope;
 import com.treasury.infrastructure.adapters.input.rabbit.TreasuryRabbitDtos.PurchaseInvoiceEnvelope;
+import com.treasury.infrastructure.adapters.output.multitenancy.utils.TenantContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
@@ -25,11 +26,15 @@ public class TreasuryEventListener {
             containerFactory = "treasuryRabbitListenerContainerFactory")
     public void invoice(Message message, PurchaseInvoiceEnvelope envelope) {
         var event = envelope.payload();
+        String authenticatedTenant = TenantContext.getTenantId();
+        if (authenticatedTenant == null || authenticatedTenant.isBlank()) {
+            throw new IllegalStateException("No existe tenant autenticado para procesar la factura de compra");
+        }
         invoiceSynchronization.synchronize(new TreasuryCommands.PurchaseInvoiceEvent(
                 envelope.eventId(), envelope.eventType(), event.invoiceId(), event.reference(),
                 event.enterpriseId(), event.supplierId(), event.originalAmount(), event.paidAmount(),
                 event.pendingAmount(), event.issueDate(), event.dueDate(), event.payableAccountId(),
-                event.payableAccountCode(), event.active(), event.tenantId()));
+                event.payableAccountCode(), event.active(), authenticatedTenant));
     }
 
     @RabbitListener(queues = RabbitConfig.RESULT_QUEUE,
