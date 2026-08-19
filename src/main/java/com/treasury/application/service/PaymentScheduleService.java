@@ -69,7 +69,8 @@ public class PaymentScheduleService implements IPaymentScheduleCommandUseCase,
             if(requested.amount()==null||requested.amount().signum()<=0)throw new TreasuryException(TreasuryException.Type.BAD_REQUEST,"El valor debe ser mayor que cero");
             if(!unique.add(requested.invoiceId()))conflict("Una factura no puede repetirse");
             SupplierInvoiceReplica invoice=invoices.findById(requested.invoiceId()).filter(i->i.getEnterpriseId().equals(command.enterpriseId())&&i.isActive()).orElseThrow(()->notFound("Obligación no encontrada"));
-            if(!invoice.getSupplierId().equals(requested.supplierId())||requested.amount().compareTo(invoice.available())>0)conflict("Detalle programado inválido");
+            if(!invoice.getSupplierId().equals(requested.supplierId()))conflict("El proveedor no corresponde a la obligación");
+            if(requested.amount().compareTo(invoice.available())>0)conflict("El monto programado supera el saldo disponible de "+invoice.getReference());
             PaymentScheduleDetail detail=new PaymentScheduleDetail();detail.setSupplierId(invoice.getSupplierId());detail.setInvoiceId(invoice.getId());detail.setAmount(requested.amount());detail.setTenantId(context.tenantId());details.add(detail);
         }schedule.setDetails(details);
     }
